@@ -231,6 +231,8 @@ mainCRTStartup:
     call MessageBoxA
 
 .project_ok:
+    call apply_player_class
+
     lea rcx, [gdip_token]
     lea rdx, [gdip_startup_input]
     xor r8d, r8d
@@ -939,28 +941,32 @@ update_game:
     call GetAsyncKeyState
     test ax, 8000h
     jz .skill2_input
-    mov dword [active_skill_id], 0
+    mov eax, [skill_slot_ids+0]
+    mov [active_skill_id], eax
     jmp .skill_selected
 .skill2_input:
     mov ecx, [project_meta+92]
     call GetAsyncKeyState
     test ax, 8000h
     jz .skill3_input
-    mov dword [active_skill_id], 1
+    mov eax, [skill_slot_ids+4]
+    mov [active_skill_id], eax
     jmp .skill_selected
 .skill3_input:
     mov ecx, [project_meta+96]
     call GetAsyncKeyState
     test ax, 8000h
     jz .skill4_input
-    mov dword [active_skill_id], 2
+    mov eax, [skill_slot_ids+8]
+    mov [active_skill_id], eax
     jmp .skill_selected
 .skill4_input:
     mov ecx, [project_meta+100]
     call GetAsyncKeyState
     test ax, 8000h
     jz .physics
-    mov dword [active_skill_id], 3
+    mov eax, [skill_slot_ids+12]
+    mov [active_skill_id], eax
 
 .skill_selected:
     mov eax, [active_skill_id]
