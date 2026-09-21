@@ -215,6 +215,10 @@ WndProc:
     mov rbp, rsp
     sub rsp, 192
 
+    ; Win64 ABI: preserve non-volatile registers used by the renderer.
+    mov [rbp-64], r12
+    mov [rbp-72], r13
+
     mov [rbp-8], rcx
     mov [rbp-16], r8
     mov [rbp-24], r9
@@ -238,11 +242,15 @@ WndProc:
     mov r8, [rbp-16]
     mov r9, [rbp-24]
     call DefWindowProcA
+    mov r12, [rbp-64]
+    mov r13, [rbp-72]
     leave
     ret
 
 .erase:
     mov eax, 1
+    mov r12, [rbp-64]
+    mov r13, [rbp-72]
     leave
     ret
 
@@ -250,6 +258,8 @@ WndProc:
     xor ecx, ecx
     call PostQuitMessage
     xor eax, eax
+    mov r12, [rbp-64]
+    mov r13, [rbp-72]
     leave
     ret
 
@@ -364,6 +374,8 @@ WndProc:
 
 .handled_zero:
     xor eax, eax
+    mov r12, [rbp-64]
+    mov r13, [rbp-72]
     leave
     ret
 
@@ -704,5 +716,7 @@ WndProc:
     call EndPaint
 
     xor eax, eax
+    mov r12, [rbp-64]
+    mov r13, [rbp-72]
     leave
     ret
