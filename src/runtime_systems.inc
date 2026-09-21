@@ -628,7 +628,10 @@ save_game:
     mov [save_header+48], eax
     mov eax, [item_count]
     mov [save_header+52], eax
-    mov qword [save_header+56], 0
+    mov eax, [equipped_weapon]
+    mov [save_header+56], eax
+    mov eax, [equipped_armor]
+    mov [save_header+60], eax
 
     call get_save_path
     mov rcx, rax
@@ -751,6 +754,10 @@ load_game:
     call CloseHandle
 
     mov eax, [save_header+12]
+    cmp eax, 0
+    jl .bad_loaded_state
+    cmp eax, [map_count]
+    jae .bad_loaded_state
     mov [active_map], eax
     mov eax, [save_header+16]
     mov [player_x], eax
@@ -766,10 +773,23 @@ load_game:
     mov [player_level], eax
     mov eax, [save_header+40]
     mov [player_money], eax
+    mov eax, [save_header+56]
+    mov [equipped_weapon], eax
+    mov eax, [save_header+60]
+    mov [equipped_armor], eax
+    call equip_recalculate
     mov dword [player_vx], 0
     mov dword [player_vy], 0
     mov dword [camera_x], 0
     mov eax, 1
+    leave
+    ret
+
+.bad_loaded_state:
+    mov eax, [start_map]
+    mov [active_map], eax
+    call initialize_player
+    xor eax, eax
     leave
     ret
 
@@ -1272,6 +1292,10 @@ equip_first_gear:
     jmp .scan
 
 .recalc:
+    call equip_recalculate
+    ret
+
+equip_recalculate:
     mov dword [player_defense], 0
     mov eax, [equipped_armor]
     cmp eax, 0
