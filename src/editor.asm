@@ -53,6 +53,8 @@ extern CreateFileA
 extern WriteFile
 extern ReadFile
 extern CloseHandle
+extern MoveFileExA
+extern DeleteFileA
 extern CreateProcessA
 extern ShellExecuteA
 extern MultiByteToWideChar
@@ -78,7 +80,7 @@ extern CopyFileA
 %define CS_VREDRAW          0x0001
 %define WS_OVERLAPPEDWINDOW 0x00CF0000
 %define WS_VISIBLE          0x10000000
-%define CW_USEDEFAULT       0x80000000
+%define CW_USEDEFAULT       -2147483648
 %define SW_SHOW             5
 
 %define WM_DESTROY          0x0002

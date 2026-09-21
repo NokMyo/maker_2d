@@ -27,12 +27,18 @@
 | F1 | Project settings |
 | F2 | Player settings |
 | F6 | Cycle database |
-| F7 | Import BMP sprite sheet |
+| F7 | Import PNG/BMP sprite sheet |
 | Tab | Next property field |
 | + / - | Adjust current value |
 | Insert | Add database record |
 | F5 | Save + test game |
-| F9 | Export Build/Game.exe |
+| F9 | Export Build/Game.exe (or configured basename) |
+| F10 | Export and launch game |
+| F3 / F4 / F11 | Map / HUD / key settings |
+| F8 / Shift+F8 / Ctrl+F8 | Rename context / executable / event dialogue |
+| Ctrl+F7 | Import game icon |
+| F12 / Ctrl+F12 | Import BGM / sound effect WAV |
+| Ctrl+Z / Ctrl+Y | One-level scene undo / redo |
 
 When canvas mode is active, +/- changes the selected entity's `param`. This links a placed entity to database data: monster→monster ID, NPC→quest ID, portal→map ID, ladder/rope→length, event trigger→event ID.
 
@@ -56,3 +62,6 @@ When canvas mode is active, +/- changes the selected entity's `param`. This link
 | F4 | Cycle save slot |
 | 1 / 2 | Select event choice |
 | Esc | Quit |
+
+
+While renaming, ordinary key presses edit text without changing tools; Enter finishes and Escape exits text entry.

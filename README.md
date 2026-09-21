@@ -7,13 +7,14 @@
 ## 현재 구현
 
 ### 프로젝트
-- TSRP v2 프로젝트 파일 (`project.tsrp`)
+- TSRP v3 프로젝트 파일 (`project.tsrp`)
 - 프로젝트 이름 메타데이터
 - 해상도 설정
 - 시작 맵 설정
 - 1~3개 저장 슬롯 설정
 - F5 즉시 테스트
-- F9 독립 게임 폴더 빌드
+- F9 독립 게임 폴더 빌드 / F10 빌드 후 실행
+- Ctrl+Z / Ctrl+Y 한 단계 장면 실행 취소·다시 실행
 - `Build/Game.exe + Build/project.tsrp + Build/Assets`
 
 ### 맵 에디터
@@ -49,12 +50,12 @@
 - 퀘스트
 - 변수/플래그
 - 이벤트
-- BMP 스프라이트 시트
+- PNG/BMP 스프라이트 시트
 
 F6으로 데이터베이스 종류를 순환하고 Tab으로 필드, +/-로 값을 변경하며 Insert로 새 레코드를 추가합니다.
 
 ### 스프라이트 / 애니메이션 / 히트박스
-- F7 BMP 스프라이트 시트 가져오기
+- F7 PNG/BMP 스프라이트 시트 가져오기
 - 프로젝트 `Assets` 폴더로 자동 복사
 - 애니메이션별 프레임 수 / 프레임 시간
 - 공격 활성 프레임 시작/종료
@@ -63,7 +64,7 @@ F6으로 데이터베이스 종류를 순환하고 Tab으로 필드, +/-로 값�
 - 애니메이션 ↔ 스프라이트 연결
 - 런타임에서 가로형 스프라이트 시트를 프레임 단위로 재생
 
-현재 네이티브 GDI 렌더러는 BMP를 사용합니다. PNG/WIC 자산 계층은 이후 단계입니다.
+PNG/BMP 이미지는 GDI+로 불러옵니다. F12로 BGM WAV, Ctrl+F12로 효과음 WAV를 가져옵니다.
 
 ### 몬스터
 - 최대 HP
@@ -120,7 +121,7 @@ F6으로 데이터베이스 종류를 순환하고 Tab으로 필드, +/-로 값�
 - Ctrl+N 새 프로젝트 / Ctrl+S 저장 / Ctrl+O 열기
 - Ctrl+M 새 맵 / PgUp·PgDn 맵 전환
 - F1 프로젝트 설정 / F2 플레이어 설정
-- F6 DB 순환 / F7 BMP 스프라이트 가져오기
+- F6 DB 순환 / F7 PNG/BMP 스프라이트 가져오기
 - Tab 필드 이동 / +/- 값 변경 / Insert 레코드 추가
 - F5 테스트 / F9 게임 빌드
 
@@ -141,10 +142,10 @@ F6으로 데이터베이스 종류를 순환하고 Tab으로 필드, +/-로 값�
 Visual Studio Developer Command Prompt + NASM:
 
     nasm -f win64 -Isrc/ src\editor.asm -o editor.obj
-    link /entry:mainCRTStartup /subsystem:windows /machine:x64 /LARGEADDRESSAWARE:NO editor.obj user32.lib gdi32.lib kernel32.lib comdlg32.lib /out:Tsuramechoki.exe
+    link /entry:mainCRTStartup /subsystem:windows /machine:x64 /LARGEADDRESSAWARE:NO editor.obj user32.lib gdi32.lib kernel32.lib comdlg32.lib shell32.lib gdiplus.lib /out:Tsuramechoki.exe
 
     nasm -f win64 -Isrc/ src\runtime.asm -o runtime.obj
-    link /entry:mainCRTStartup /subsystem:windows /machine:x64 /LARGEADDRESSAWARE:NO runtime.obj user32.lib gdi32.lib kernel32.lib /out:TsuramechokiRuntime.exe
+    link /entry:mainCRTStartup /subsystem:windows /machine:x64 /LARGEADDRESSAWARE:NO runtime.obj user32.lib gdi32.lib kernel32.lib gdiplus.lib winmm.lib /out:TsuramechokiRuntime.exe
 
 ## 코드 구조
 - `src/editor.asm` — Win32 에디터
@@ -155,3 +156,16 @@ Visual Studio Developer Command Prompt + NASM:
 - `src/data.inc` — 공용 RPG 데이터 모델
 
 프로그램 로직은 계속 **Assembly only**를 유지합니다.
+
+
+## 안정성 검증
+
+Windows CI에서 에디터·런타임과 `tests/*.asm` 회귀 테스트를 조립·링크하고 실행합니다. 프로그램과 테스트 로직 모두 NASM Assembly입니다. CI의 YAML/명령은 빌드 실행용입니다.
+
+- 마우스 배치 좌표와 실행 취소·다시 실행
+- 프로젝트 저장·불러오기와 손상된 파일 로드 실패 시 기존 편집 상태 보존
+- 몬스터 피격·처치, 보상, 이벤트 연속 실행 및 잘못된 조건 분기 차단
+- 세이브 불러오기 시 레벨 능력치 복원과 잘린 세이브 거부
+- 에디터 내보내기 → 생성된 `Build/Game.exe` 초기화 실행
+
+프로젝트·세이브는 임시 파일에 전체 내용을 기록한 뒤 기존 파일을 교체합니다. 레거시 TSRP v1/v2 자동 변환은 제공하지 않습니다. 상세 검토 내용과 남은 제약은 `docs/REVIEW.md`에 있습니다.

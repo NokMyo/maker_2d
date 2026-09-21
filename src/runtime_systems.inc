@@ -2,6 +2,9 @@
 ; Included by runtime.asm. 100% x86-64 NASM.
 
 section .data
+    ts_save_temp0         db "save0.tsav.tmp",0
+    ts_save_temp1         db "save1.tsav.tmp",0
+    ts_save_temp2         db "save2.tsav.tmp",0
     ts_save_path0         db "save0.tsav",0
     ts_save_path1         db "save1.tsav",0
     ts_save_path2         db "save2.tsav",0
@@ -129,7 +132,7 @@ ts_rt_write_block:
     ret
 
 ; ------------------------------------------------------------
-; TSRP v2 project loader
+; TSRP v3 project loader
 ; ------------------------------------------------------------
 load_project:
     push rbp
@@ -795,7 +798,7 @@ save_game:
     mov eax, [equipped_armor]
     mov [save_header+60], eax
 
-    call get_save_path
+    call get_save_temp_path
     mov rcx, rax
     mov edx, GENERIC_WRITE
     xor r8d, r8d
@@ -845,6 +848,17 @@ save_game:
 
     mov rcx, [rbp-8]
     call CloseHandle
+    test eax, eax
+    jz .fail
+    call get_save_path
+    mov [rbp-16], rax
+    call get_save_temp_path
+    mov rcx, rax
+    mov rdx, [rbp-16]
+    mov r8d, 9 ; Replace only after the full file has been written and closed.
+    call MoveFileExA
+    test eax, eax
+    jz .fail
     mov eax, 1
     leave
     ret
@@ -852,6 +866,9 @@ save_game:
     mov rcx, [rbp-8]
     call CloseHandle
 .fail:
+    call get_save_temp_path
+    mov rcx, rax
+    call DeleteFileA
     xor eax, eax
     leave
     ret
@@ -2341,3 +2358,18 @@ runtime_draw_status:
 
 
 %include "validation.inc"
+
+get_save_temp_path:
+    mov eax, [current_save_slot]
+    cmp eax, 1
+    je .slot1
+    cmp eax, 2
+    je .slot2
+    lea rax, [ts_save_temp0]
+    ret
+.slot1:
+    lea rax, [ts_save_temp1]
+    ret
+.slot2:
+    lea rax, [ts_save_temp2]
+    ret

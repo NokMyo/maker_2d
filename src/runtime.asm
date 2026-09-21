@@ -58,6 +58,8 @@ extern CreateFileA
 extern ReadFile
 extern WriteFile
 extern CloseHandle
+extern MoveFileExA
+extern DeleteFileA
 extern MessageBoxA
 extern wsprintfA
 extern lstrlenA
@@ -82,7 +84,7 @@ extern PlaySoundA
 %define IMAGE_ICON          1
 %define LR_LOADFROMFILE     0x0010
 %define LR_DEFAULTSIZE      0x0040
-%define CW_USEDEFAULT       0x80000000
+%define CW_USEDEFAULT       -2147483648
 %define SW_SHOW             5
 
 %define WM_DESTROY          0x0002

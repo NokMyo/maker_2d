@@ -2,6 +2,7 @@
 ; Included by editor.asm. 100% x86-64 NASM.
 
 section .data
+    project_temp_path    db "project.tsrp.tmp",0
     ts_name_map          db "Map_%03d",0
     ts_name_animation    db "Animation",0
     ts_name_skill        db "Skill",0
@@ -376,7 +377,7 @@ ts_read_block:
     ret
 
 ; ------------------------------------------------------------
-; save_project — TSRP v2
+; save_project — TSRP v3
 ; ------------------------------------------------------------
 save_project:
     push rbp
@@ -439,7 +440,7 @@ save_project:
     mov [database_header+32], eax
     mov dword [database_header+36], 0
 
-    lea rcx, [project_path]
+    lea rcx, [project_temp_path]
     mov edx, GENERIC_WRITE
     xor r8d, r8d
     xor r9d, r9d
@@ -613,6 +614,14 @@ save_project:
 .success:
     mov rcx, [rbp-16]
     call CloseHandle
+    test eax, eax
+    jz .fail
+    lea rcx, [project_temp_path]
+    lea rdx, [project_path]
+    mov r8d, 9 ; MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+    call MoveFileExA
+    test eax, eax
+    jz .fail
     mov eax, 1
     jmp .done
 
@@ -620,6 +629,8 @@ save_project:
     mov rcx, [rbp-16]
     call CloseHandle
 .fail:
+    lea rcx, [project_temp_path]
+    call DeleteFileA
     xor eax, eax
 .done:
     mov r12, [rbp-8]
@@ -627,7 +638,7 @@ save_project:
     ret
 
 ; ------------------------------------------------------------
-; load_project — TSRP v2
+; load_project — TSRP v3
 ; ------------------------------------------------------------
 load_project:
     push rbp
