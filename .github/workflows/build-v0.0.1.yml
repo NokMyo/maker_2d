@@ -27,43 +27,43 @@ jobs:
       - name: Build editor
         shell: cmd
         run: |
-          nasm -f win64 -Isrc/ src\prelude.asm -o prelude.obj
-          link /entry:mainCRTStartup /subsystem:windows /machine:x64 prelude.obj user32.lib gdi32.lib kernel32.lib /out:LeellaPrelude.exe
+          nasm -f win64 -Isrc/ src\editor.asm -o editor.obj
+          link /entry:mainCRTStartup /subsystem:windows /machine:x64 editor.obj user32.lib gdi32.lib kernel32.lib /out:Tsuramechoki.exe
 
       - name: Build runtime
         shell: cmd
         run: |
           nasm -f win64 -Isrc/ src\runtime.asm -o runtime.obj
-          link /entry:mainCRTStartup /subsystem:windows /machine:x64 runtime.obj user32.lib gdi32.lib kernel32.lib /out:LeellaRuntime.exe
+          link /entry:mainCRTStartup /subsystem:windows /machine:x64 runtime.obj user32.lib gdi32.lib kernel32.lib /out:TsuramechokiRuntime.exe
 
       - name: Package
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item LeellaPrelude.exe dist\LeellaPrelude.exe
-          Copy-Item LeellaRuntime.exe dist\LeellaRuntime.exe
-          Compress-Archive -Path dist\* -DestinationPath LeellaPrelude-v0.0.1-windows-x64.zip -Force
+          Copy-Item Tsuramechoki.exe dist\Tsuramechoki.exe
+          Copy-Item TsuramechokiRuntime.exe dist\TsuramechokiRuntime.exe
+          Compress-Archive -Path dist\* -DestinationPath Tsuramechoki-v0.0.1-windows-x64.zip -Force
 
       - name: Upload binaries to v0.0.1
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.0.1
           body: |
-            # Leella Prelude v0.0.1
+            # Tsuramechoki v0.0.1
 
-            르엘라 프렐류드의 첫 Windows x64 프리뷰 릴리스입니다.
+            츠라메쵸키의 첫 Windows x64 프리뷰 릴리스입니다.
 
             **100% x86-64 Assembly**로 작성된 2D 횡스크롤 액션 RPG 제작툴의 초기 MVP입니다.
 
             ## 포함 파일
-            - LeellaPrelude.exe — 에디터
-            - LeellaRuntime.exe — 테스트 플레이 런타임
-            - LeellaPrelude-v0.0.1-windows-x64.zip — 두 실행 파일 묶음
+            - Tsuramechoki.exe — 에디터
+            - TsuramechokiRuntime.exe — 테스트 플레이 런타임
+            - Tsuramechoki-v0.0.1-windows-x64.zip — 두 실행 파일 묶음
 
             ## 현재 기능
             - 발판 생성/선택/이동/삭제
             - 플레이어 시작점, 몬스터, NPC, 포탈 배치
-            - project.lprj 저장/불러오기
+            - project.tsrp 저장/불러오기
             - F5 테스트 플레이
             - 이동/점프/중력/발판 충돌
             - 근접 공격, 기본 몬스터 AI, HP/부활
@@ -73,6 +73,6 @@ jobs:
             GitHub Actions의 Windows x64 환경에서 NASM 조립과 MSVC 링크가 모두 성공했습니다.
             초기 0.0.1 프리뷰이므로 실제 사용자 환경에서의 동작 검증은 계속 진행 중입니다.
           files: |
-            dist/LeellaPrelude.exe
-            dist/LeellaRuntime.exe
-            LeellaPrelude-v0.0.1-windows-x64.zip
+            dist/Tsuramechoki.exe
+            dist/TsuramechokiRuntime.exe
+            Tsuramechoki-v0.0.1-windows-x64.zip
