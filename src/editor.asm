@@ -53,6 +53,8 @@ extern CreateFileA
 extern WriteFile
 extern ReadFile
 extern CloseHandle
+extern MoveFileExA
+extern DeleteFileA
 extern CreateProcessA
 extern ShellExecuteA
 extern MultiByteToWideChar
@@ -78,7 +80,7 @@ extern CopyFileA
 %define CS_VREDRAW          0x0001
 %define WS_OVERLAPPEDWINDOW 0x00CF0000
 %define WS_VISIBLE          0x10000000
-%define CW_USEDEFAULT       0x80000000
+%define CW_USEDEFAULT       -2147483648
 %define SW_SHOW             5
 
 %define WM_DESTROY          0x0002
@@ -281,6 +283,7 @@ section .bss
     entity_count    resd 1
     platforms       resd MAX_PLATFORMS*4
     entities        resd MAX_ENTITIES*4
+project_core_end:
 
 section .text
 
@@ -761,9 +764,14 @@ WndProc:
     cmp eax, TOOL_SELECT
     je .canvas_select
 
-    push rax
     call history_capture
-    pop rax
+    ; History copying clobbers volatile registers; rebuild canvas inputs.
+    mov ecx, [rbp-80]
+    sub ecx, LEFT_PANEL
+    add ecx, [editor_camera_x]
+    mov edx, [rbp-84]
+    sub edx, TOP_BAR
+    mov eax, [tool_mode]
 
     cmp eax, TOOL_PLATFORM
     je .canvas_platform
@@ -778,11 +786,7 @@ WndProc:
 
 .canvas_select:
     ; Entities get selection priority over platforms.
-    push rcx
-    push rdx
     call find_entity_at
-    pop rdx
-    pop rcx
     cmp eax, -1
     je .select_platform_only
     mov [selected_entity], eax
@@ -790,6 +794,11 @@ WndProc:
     jmp .invalidate
 
 .select_platform_only:
+    mov ecx, [rbp-80]
+    sub ecx, LEFT_PANEL
+    add ecx, [editor_camera_x]
+    mov edx, [rbp-84]
+    sub edx, TOP_BAR
     call find_platform_at
     mov [selected_platform], eax
     mov dword [selected_entity], -1
@@ -820,7 +829,7 @@ WndProc:
 
     mov r10, [rbp-32]
     mov eax, r10d
-    and eax, 0FFFFh
+    movsx eax, ax
     sub eax, LEFT_PANEL
     add eax, [editor_camera_x]
     add eax, SNAP_SIZE/2
@@ -829,7 +838,7 @@ WndProc:
 
     mov eax, r10d
     shr eax, 16
-    and eax, 0FFFFh
+    movsx eax, ax
     sub eax, TOP_BAR
     add eax, SNAP_SIZE/2
     and eax, -SNAP_SIZE
@@ -1989,184 +1998,10 @@ init_default_project:
 ; ------------------------------------------------------------
 ; save_project -> eax=1/0
 ; ------------------------------------------------------------
-save_project_legacy:
-    push rbp
-    mov rbp, rsp
-    sub rsp, 80
-
-    mov eax, [platform_count]
-    mov [project_header+12], eax
-    mov eax, [entity_count]
-    mov [project_header+16], eax
-
-    lea rcx, [project_path]
-    mov edx, GENERIC_WRITE
-    xor r8d, r8d
-    xor r9d, r9d
-    mov qword [rsp+32], CREATE_ALWAYS
-    mov qword [rsp+40], FILE_ATTRIBUTE_NORMAL
-    mov qword [rsp+48], 0
-    call CreateFileA
-
-    cmp rax, INVALID_HANDLE_VALUE
-    je .fail
-    mov [rbp-8], rax
-
-    mov rcx, rax
-    lea rdx, [project_header]
-    mov r8d, PROJECT_HEADER_SIZE
-    lea r9, [io_bytes]
-    mov qword [rsp+32], 0
-    call WriteFile
-    test eax, eax
-    jz .close_fail
-
-    mov eax, [platform_count]
-    imul eax, PLATFORM_SIZE
-    test eax, eax
-    jz .entities
-
-    mov rcx, [rbp-8]
-    lea rdx, [platforms]
-    mov r8d, eax
-    lea r9, [io_bytes]
-    mov qword [rsp+32], 0
-    call WriteFile
-    test eax, eax
-    jz .close_fail
-
-.entities:
-    mov eax, [entity_count]
-    imul eax, ENTITY_SIZE
-    test eax, eax
-    jz .success
-
-    mov rcx, [rbp-8]
-    lea rdx, [entities]
-    mov r8d, eax
-    lea r9, [io_bytes]
-    mov qword [rsp+32], 0
-    call WriteFile
-    test eax, eax
-    jz .close_fail
-
-.success:
-    mov rcx, [rbp-8]
-    call CloseHandle
-    mov eax, 1
-    leave
-    ret
-
-.close_fail:
-    mov rcx, [rbp-8]
-    call CloseHandle
-.fail:
-    xor eax, eax
-    leave
-    ret
-
-
-; ------------------------------------------------------------
-; load_project -> eax=1/0
-; ------------------------------------------------------------
-load_project_legacy:
-    push rbp
-    mov rbp, rsp
-    sub rsp, 80
-
-    lea rcx, [project_path]
-    mov edx, GENERIC_READ
-    mov r8d, FILE_SHARE_READ
-    xor r9d, r9d
-    mov qword [rsp+32], OPEN_EXISTING
-    mov qword [rsp+40], FILE_ATTRIBUTE_NORMAL
-    mov qword [rsp+48], 0
-    call CreateFileA
-
-    cmp rax, INVALID_HANDLE_VALUE
-    je .fail
-    mov [rbp-8], rax
-
-    mov rcx, rax
-    lea rdx, [project_header]
-    mov r8d, PROJECT_HEADER_SIZE
-    lea r9, [io_bytes]
-    mov qword [rsp+32], 0
-    call ReadFile
-    test eax, eax
-    jz .close_fail
-
-    mov rax, PROJECT_MAGIC_QWORD
-    cmp qword [project_header], rax
-    jne .close_fail
-    cmp dword [project_header+8], PROJECT_VERSION
-    jne .close_fail
-
-    mov eax, [project_header+12]
-    cmp eax, MAX_PLATFORMS
-    ja .close_fail
-    mov [platform_count], eax
-
-    mov eax, [project_header+16]
-    cmp eax, MAX_ENTITIES
-    ja .close_fail
-    mov [entity_count], eax
-
-    mov eax, [platform_count]
-    imul eax, PLATFORM_SIZE
-    test eax, eax
-    jz .read_entities
-
-    mov rcx, [rbp-8]
-    lea rdx, [platforms]
-    mov r8d, eax
-    lea r9, [io_bytes]
-    mov qword [rsp+32], 0
-    call ReadFile
-    test eax, eax
-    jz .close_fail
-
-.read_entities:
-    mov eax, [entity_count]
-    imul eax, ENTITY_SIZE
-    test eax, eax
-    jz .success
-
-    mov rcx, [rbp-8]
-    lea rdx, [entities]
-    mov r8d, eax
-    lea r9, [io_bytes]
-    mov qword [rsp+32], 0
-    call ReadFile
-    test eax, eax
-    jz .close_fail
-
-.success:
-    mov rcx, [rbp-8]
-    call CloseHandle
-    mov dword [selected_platform], -1
-    mov dword [selected_entity], -1
-    mov eax, 1
-    leave
-    ret
-
-.close_fail:
-    mov rcx, [rbp-8]
-    call CloseHandle
-.fail:
-    xor eax, eax
-    leave
-    ret
-
-
-; ------------------------------------------------------------
-; launch_runtime
-; save, then CreateProcessA("TsuramechokiRuntime.exe")
-; ------------------------------------------------------------
 launch_runtime:
     push rbp
     mov rbp, rsp
-    sub rsp, 128
+    sub rsp, 176
     mov [rbp-88], rdi
 
     call save_project
@@ -2218,3 +2053,4 @@ launch_runtime:
 
 
 %include "editor_systems.inc"
+

@@ -28,9 +28,9 @@
 %define ENTITY_EVENT        9
 
 ; ------------------------------------------------------------
-; Project header v2 — 64 bytes
+; Project header v3 — 64 bytes
 ; ------------------------------------------------------------
-; +00 qword magic "TSRP0002"
+; +00 qword magic "TSRP0003"
 ; +08 dword version
 ; +12 dword header_size
 ; +16 dword platform_count
@@ -91,6 +91,8 @@
 ; quest[quest_count]
 ; variable[variable_count]
 ; event[event_count]
+; sprite[sprite_count]
+; class[class_count]
 ;
 ; ------------------------------------------------------------
 ; Platform record — 16 bytes
@@ -120,3 +122,4 @@
 ; Map ownership is stored in the parallel entity_map_id array.
 
 %endif
+

@@ -58,6 +58,8 @@ extern CreateFileA
 extern ReadFile
 extern WriteFile
 extern CloseHandle
+extern MoveFileExA
+extern DeleteFileA
 extern MessageBoxA
 extern wsprintfA
 extern lstrlenA
@@ -82,7 +84,7 @@ extern PlaySoundA
 %define IMAGE_ICON          1
 %define LR_LOADFROMFILE     0x0010
 %define LR_DEFAULTSIZE      0x0040
-%define CW_USEDEFAULT       0x80000000
+%define CW_USEDEFAULT       -2147483648
 %define SW_SHOW             5
 
 %define WM_DESTROY          0x0002
@@ -126,10 +128,10 @@ section .data
     load_error_title db "Tsuramechoki Runtime",0
     load_error_text  db "project.tsrp could not be loaded.",0
     runtime_smoke_env db "TSURAMECHOKI_RUNTIME_SMOKE",0
-    bgm_open_cmd     db 'open "Assets\\BGM.wav" type waveaudio alias tsbgm',0
+    bgm_open_cmd     db 'open "Assets\BGM.wav" type waveaudio alias tsbgm',0
     bgm_play_cmd     db "play tsbgm repeat",0
     bgm_close_cmd    db "close tsbgm",0
-    se_path          db "Assets\\SE.wav",0
+    se_path          db "Assets\SE.wav",0
 
     txt_help         db "A/D or arrows: move   Space: jump   X: attack   E: interact   Esc: quit",0
     txt_help_len     equ $-txt_help-1
@@ -227,11 +229,18 @@ mainCRTStartup:
     test eax, eax
     jnz .project_ok
 
+    lea rcx, [runtime_smoke_env]
+    lea rdx, [runtime_smoke_buf]
+    mov r8d, 8
+    call GetEnvironmentVariableA
+    test eax, eax
+    jnz .fail
     xor ecx, ecx
     lea rdx, [load_error_text]
     lea r8, [load_error_title]
     xor r9d, r9d
     call MessageBoxA
+    jmp .fail
 
 .project_ok:
     call apply_player_class
@@ -543,7 +552,7 @@ WndProc:
     jae .entity_color_dispatch
     imul eax, MONSTER_SIZE
     lea r10, [monster_defs+rax]
-    mov edx, [r10+60]
+    mov r11d, [r10+60]
 
     cmp dword [r10+56], AI_BOSS
     jne .monster_anim_ready
@@ -557,8 +566,9 @@ WndProc:
     mov eax, [r10+76]
     cmp eax, 0
     jl .monster_anim_ready
-    mov edx, eax
+    mov r11d, eax
 .monster_anim_ready:
+    mov edx, r11d
     mov rcx, [rbp-32]
     mov r8d, [temp_rect+0]
     mov r9d, [temp_rect+4]
@@ -992,6 +1002,13 @@ update_game:
     imul eax, SKILL_SIZE
     lea r11, [skills+rax]
 
+    ; Reject the action before changing attack state if MP is insufficient.
+    mov eax, [r11+36]
+    test eax, eax
+    js .physics
+    cmp [player_mp], eax
+    jl .physics
+    sub [player_mp], eax
     mov dword [attack_ticks], 8
     mov dword [attack_total_ticks], 8
     mov dword [attack_frame_ticks], 1
@@ -1000,11 +1017,10 @@ update_game:
     mov dword [attack_hits_done], 0
     mov dword [attack_last_frame], -1
 
-    mov eax, [r11+36]
-    cmp [player_mp], eax
-    jl .physics
-    sub [player_mp], eax
     call runtime_play_se
+    mov eax, [active_skill_id]
+    imul eax, SKILL_SIZE
+    lea r11, [skills+rax]
 
     mov eax, [r11+40]
     cmp eax, 1
@@ -1238,7 +1254,7 @@ update_game:
 attack_monsters:
     push rbp
     mov rbp, rsp
-    sub rsp, 64
+    sub rsp, 80
     mov [rbp-40], r12
     mov [rbp-48], r13
 
@@ -1330,14 +1346,8 @@ attack_monsters:
 
 .apply_damage:
 
-    lea rax, [enemy_hp]
-    mov ecx, r12d
-    shl rcx, 2
-    add rax, rcx
-    push rax
     call equipment_attack_bonus
     mov edx, eax
-    pop rax
     add edx, [player_base_attack]
     mov ecx, [active_skill_id]
     cmp ecx, 0
@@ -1347,7 +1357,7 @@ attack_monsters:
     imul ecx, SKILL_SIZE
     add edx, [skills+rcx+32]
 .damage_ready:
-    sub dword [rax], edx
+    sub dword [enemy_hp+r12*4], edx
 
     ; Skill knockback on every successful hit.
     mov eax, [active_skill_id]
@@ -1364,7 +1374,7 @@ attack_monsters:
 .knock_monster_left:
     sub [r13+4], edx
 .after_knockback:
-    cmp dword [rax], 0
+    cmp dword [enemy_hp+r12*4], 0
     jg .next
 
     ; Reward/drop/quest progress before removing runtime monster.
@@ -1698,6 +1708,9 @@ update_interaction:
 ; respawn_player
 ; ------------------------------------------------------------
 respawn_player:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
     mov eax, [spawn_x]
     mov [player_x], eax
     mov eax, [spawn_y]
@@ -1709,6 +1722,7 @@ respawn_player:
     mov eax, [player_max_mp]
     mov [player_mp], eax
     mov dword [invuln_ticks], 90
+    leave
     ret
 
 ; ------------------------------------------------------------
@@ -1793,93 +1807,5 @@ initialize_player:
 ; ------------------------------------------------------------
 ; load_project -> eax = 1 success, 0 fail
 ; ------------------------------------------------------------
-load_project_legacy:
-    push rbp
-    mov rbp, rsp
-    sub rsp, 80
-
-    lea rcx, [project_path]
-    mov edx, GENERIC_READ
-    mov r8d, FILE_SHARE_READ
-    xor r9d, r9d
-    mov qword [rsp+32], OPEN_EXISTING
-    mov qword [rsp+40], FILE_ATTRIBUTE_NORMAL
-    mov qword [rsp+48], 0
-    call CreateFileA
-
-    cmp rax, INVALID_HANDLE_VALUE
-    je .fail
-    mov [rbp-8], rax
-
-    mov rcx, rax
-    lea rdx, [project_header]
-    mov r8d, PROJECT_HEADER_SIZE
-    lea r9, [io_bytes]
-    mov qword [rsp+32], 0
-    call ReadFile
-    test eax, eax
-    jz .close_fail
-
-    mov rax, PROJECT_MAGIC_QWORD
-    cmp qword [project_header], rax
-    jne .close_fail
-    cmp dword [project_header+8], PROJECT_VERSION
-    jne .close_fail
-
-    mov eax, [project_header+12]
-    cmp eax, MAX_PLATFORMS
-    ja .close_fail
-    mov [platform_count], eax
-
-    mov eax, [project_header+16]
-    cmp eax, MAX_ENTITIES
-    ja .close_fail
-    mov [entity_count], eax
-
-    mov eax, [platform_count]
-    imul eax, PLATFORM_SIZE
-    mov [rbp-16], eax
-    test eax, eax
-    jz .read_entities
-
-    mov rcx, [rbp-8]
-    lea rdx, [platforms]
-    mov r8d, eax
-    lea r9, [io_bytes]
-    mov qword [rsp+32], 0
-    call ReadFile
-    test eax, eax
-    jz .close_fail
-
-.read_entities:
-    mov eax, [entity_count]
-    imul eax, ENTITY_SIZE
-    test eax, eax
-    jz .success
-
-    mov rcx, [rbp-8]
-    lea rdx, [entities]
-    mov r8d, eax
-    lea r9, [io_bytes]
-    mov qword [rsp+32], 0
-    call ReadFile
-    test eax, eax
-    jz .close_fail
-
-.success:
-    mov rcx, [rbp-8]
-    call CloseHandle
-    mov eax, 1
-    leave
-    ret
-
-.close_fail:
-    mov rcx, [rbp-8]
-    call CloseHandle
-.fail:
-    xor eax, eax
-    leave
-    ret
-
-
 %include "runtime_systems.inc"
+

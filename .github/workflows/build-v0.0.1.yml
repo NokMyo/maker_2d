@@ -5,12 +5,14 @@ on:
   push:
     branches:
       - main
+      - "codex/**"
     paths:
       - ".github/workflows/build-v0.0.1.yml"
       - "src/**"
+      - "tests/**"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -29,14 +31,42 @@ jobs:
       - name: Build editor
         shell: cmd
         run: |
-          nasm -f win64 -Isrc/ src\editor.asm -o editor.obj
+          nasm -Werror -f win64 -Isrc/ src\editor.asm -o editor.obj || exit /b 1
           link /entry:mainCRTStartup /subsystem:windows /machine:x64 /LARGEADDRESSAWARE:NO editor.obj user32.lib gdi32.lib kernel32.lib comdlg32.lib shell32.lib gdiplus.lib /out:Tsuramechoki.exe
 
       - name: Build runtime
         shell: cmd
         run: |
-          nasm -f win64 -Isrc/ src\runtime.asm -o runtime.obj
+          nasm -Werror -f win64 -Isrc/ src\runtime.asm -o runtime.obj || exit /b 1
           link /entry:mainCRTStartup /subsystem:windows /machine:x64 /LARGEADDRESSAWARE:NO runtime.obj user32.lib gdi32.lib kernel32.lib gdiplus.lib winmm.lib /out:TsuramechokiRuntime.exe
+
+      - name: Build assembly regression tests
+        shell: cmd
+        run: |
+          nasm -Werror -f win64 -Isrc/ tests\editor_tests.asm -o editor-tests.obj || exit /b 1
+          link /entry:mainCRTStartup /subsystem:console /machine:x64 /LARGEADDRESSAWARE:NO editor-tests.obj user32.lib gdi32.lib kernel32.lib comdlg32.lib shell32.lib gdiplus.lib /out:editor-tests.exe || exit /b 1
+          nasm -Werror -f win64 -Isrc/ tests\runtime_tests.asm -o runtime-tests.obj || exit /b 1
+          link /entry:mainCRTStartup /subsystem:console /machine:x64 /LARGEADDRESSAWARE:NO runtime-tests.obj user32.lib gdi32.lib kernel32.lib gdiplus.lib winmm.lib /out:runtime-tests.exe || exit /b 1
+
+      - name: Run regression tests and exported game
+        shell: powershell
+        run: |
+          function Run-Checked($file, $directory = $pwd.Path) {
+            $process = Start-Process -FilePath $file -WorkingDirectory $directory -PassThru
+            if (-not $process.WaitForExit(30000)) {
+              $process.Kill()
+              throw "$file timed out"
+            }
+            if ($process.ExitCode -ne 0) { throw "$file failed: $($process.ExitCode)" }
+          }
+          Run-Checked "$pwd\editor-tests.exe"
+          Run-Checked "$pwd\runtime-tests.exe"
+          $env:TSURAMECHOKI_CI_SMOKE = '1'
+          Run-Checked "$pwd\Tsuramechoki.exe"
+          Remove-Item Env:TSURAMECHOKI_CI_SMOKE
+          $env:TSURAMECHOKI_RUNTIME_SMOKE = '1'
+          Run-Checked "$pwd\Build\Game.exe" "$pwd\Build"
+          Remove-Item Env:TSURAMECHOKI_RUNTIME_SMOKE
 
       - name: Package
         shell: powershell
@@ -55,3 +85,4 @@ jobs:
             dist/TsuramechokiRuntime.exe
             Tsuramechoki-v0.0.1-windows-x64.zip
           if-no-files-found: error
+
