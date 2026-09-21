@@ -11,11 +11,11 @@ section .data
     ts_name_variable     db "Variable",0
     ts_name_event        db "Event",0
     ts_name_sprite       db "Sprite",0
-    ts_import_title      db "Import BMP Sprite Sheet",0
-    ts_bmp_filter        db "Bitmap (*.bmp)",0,"*.bmp",0,"All Files",0,"*.*",0,0
+    ts_import_title      db "Import PNG/BMP Sprite Sheet",0
+    ts_bmp_filter        db "Images (*.png;*.bmp)",0,"*.png;*.bmp",0,"All Files",0,"*.*",0,0
     ts_assets_dir        db "Assets",0
     ts_build_assets_dir  db "Build\Assets",0
-    ts_sprite_path_fmt   db "Assets\Sprite%03d.bmp",0
+    ts_sprite_path_fmt   db "Assets\Sprite%03d.asset",0
     ts_build_asset_fmt   db "Build\%s",0
 
     ts_default_project   db "My Tsuramechoki Game",0
