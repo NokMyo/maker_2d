@@ -29,13 +29,13 @@ jobs:
         shell: cmd
         run: |
           nasm -f win64 -Isrc/ src\editor.asm -o editor.obj
-          link /entry:mainCRTStartup /subsystem:windows /machine:x64 editor.obj user32.lib gdi32.lib kernel32.lib /out:Tsuramechoki.exe
+          link /entry:mainCRTStartup /subsystem:windows /machine:x64 /LARGEADDRESSAWARE:NO editor.obj user32.lib gdi32.lib kernel32.lib /out:Tsuramechoki.exe
 
       - name: Build runtime
         shell: cmd
         run: |
           nasm -f win64 -Isrc/ src\runtime.asm -o runtime.obj
-          link /entry:mainCRTStartup /subsystem:windows /machine:x64 runtime.obj user32.lib gdi32.lib kernel32.lib /out:TsuramechokiRuntime.exe
+          link /entry:mainCRTStartup /subsystem:windows /machine:x64 /LARGEADDRESSAWARE:NO runtime.obj user32.lib gdi32.lib kernel32.lib /out:TsuramechokiRuntime.exe
 
       - name: Package
         shell: powershell
