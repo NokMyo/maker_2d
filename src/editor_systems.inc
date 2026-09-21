@@ -19,6 +19,7 @@ section .data
     ts_build_asset_fmt   db "Build\%s",0
 
     ts_default_project   db "My Tsuramechoki Game",0
+    ts_default_exe       db "Game.exe",0
     ts_default_map       db "Map_001",0
     ts_default_idle      db "PlayerIdle",0
     ts_default_attack    db "PlayerAttack",0
@@ -42,9 +43,9 @@ section .data
     ts_project_fmt       db "Project: %s",0
     ts_rename_hint       db "F8 Rename project (type, Enter done)",0
     ts_rename_hint_len   equ $-ts_rename_hint-1
-    ts_help1             db "F1 Project  F2 Player  F3 Map  F6 DB",0
+    ts_help1             db "F1 Project  F2 Player  F3 Map  F4 UI  F6 DB",0
     ts_help1_len         equ $-ts_help1-1
-    ts_help2             db "TAB field  +/- edit  INS add  F7 sprite BMP",0
+    ts_help2             db "TAB field  +/- edit  INS add  F7 image  F11 keys",0
     ts_help2_len         equ $-ts_help2-1
     ts_help3             db "PgUp/PgDn map  Ctrl+M new  F9 build  F10 build+run",0
     ts_help3_len         equ $-ts_help3-1
@@ -132,6 +133,22 @@ init_project_systems:
     mov dword [project_meta+52], 0
     mov dword [project_meta+56], -1
     mov dword [project_meta+60], -1
+    mov dword [project_meta+64], 16
+    mov dword [project_meta+68], 66
+    mov dword [project_meta+72], 1
+    mov dword [project_meta+76], 058h
+    mov dword [project_meta+80], 045h
+    mov dword [project_meta+84], 043h
+    mov dword [project_meta+88], 020h
+    mov dword [project_meta+92], 05Ah
+    mov dword [project_meta+96], 052h
+    mov dword [project_meta+100], 046h
+    mov dword [project_meta+104], 0
+    mov dword [project_meta+108], 1
+    lea rcx, [project_meta+112]
+    lea rdx, [ts_default_exe]
+    call lstrcpyA
+    mov byte [project_meta+160], 0
     mov dword [editor_panel_mode], 0
     mov dword [property_index], 0
     mov dword [database_index], 0
@@ -146,6 +163,8 @@ init_project_systems:
     mov dword [maps+44], -1
     mov dword [maps+48], -1
     mov dword [maps+52], 0
+    mov dword [maps+56], -1
+    mov dword [maps+60], -1
 
     mov dword [animation_count], 3
     lea rcx, [animations]
@@ -806,6 +825,11 @@ ts_add_map:
     mov dword [r10+44], -1
     mov dword [r10+48], -1
     mov dword [r10+52], 0
+    mov dword [r10+56], -1
+    mov dword [r10+60], -1
+    mov dword [r10+44], -1
+    mov dword [r10+48], -1
+    mov dword [r10+52], 0
 
     inc dword [map_count]
     mov dword [editor_camera_x], 0
@@ -860,6 +884,8 @@ system_keydown:
     je .player
     cmp ecx, 072h                 ; F3
     je .map_settings
+    cmp ecx, 073h                 ; F4
+    je .ui_settings
     cmp ecx, 075h                 ; F6
     je .database
     cmp ecx, 076h                 ; F7 sprite import
@@ -870,6 +896,8 @@ system_keydown:
     je .build
     cmp ecx, 079h                 ; F10
     je .build_run
+    cmp ecx, 07Ah                 ; F11
+    je .control_settings
     cmp ecx, 021h                 ; PgUp
     je .prev_map
     cmp ecx, 022h                 ; PgDn
@@ -908,6 +936,14 @@ system_keydown:
     jmp .handled
 .map_settings:
     mov dword [editor_panel_mode], 10
+    mov dword [property_index], 0
+    jmp .handled
+.ui_settings:
+    mov dword [editor_panel_mode], 11
+    mov dword [property_index], 0
+    jmp .handled
+.control_settings:
+    mov dword [editor_panel_mode], 12
     mov dword [property_index], 0
     jmp .handled
 .database:
@@ -1059,6 +1095,10 @@ ts_adjust_setting:
     je .event
     cmp edx, 10
     je .map
+    cmp edx, 11
+    je .ui
+    cmp edx, 12
+    je .controls
     ret
 
 .entity_param:
@@ -1086,6 +1126,10 @@ ts_adjust_setting:
     je .map_music
     cmp eax, 4
     je .map_bg_sprite
+    cmp eax, 5
+    je .map_fg_sprite
+    cmp eax, 6
+    je .map_tile_sprite
     ret
 .map_color:
     imul eax, ecx, 010101h
@@ -1113,6 +1157,85 @@ ts_adjust_setting:
     cmp [r8+48], eax
     jle .done
     mov [r8+48], eax
+    ret
+.map_fg_sprite:
+    lea r9, [r8+56]
+    jmp .map_sprite_common
+.map_tile_sprite:
+    lea r9, [r8+60]
+.map_sprite_common:
+    add dword [r9], ecx
+    cmp dword [r9], -1
+    jge .map_sprite_upper
+    mov dword [r9], -1
+.map_sprite_upper:
+    mov eax, [sprite_count]
+    dec eax
+    cmp [r9], eax
+    jle .done
+    mov [r9], eax
+    ret
+
+.ui:
+    mov eax, [property_index]
+    cmp eax, 0
+    je .ui_x
+    cmp eax, 1
+    je .ui_y
+    cmp eax, 2
+    je .ui_minimap
+    ret
+.ui_x:
+    imul eax, ecx, 4
+    add [project_meta+64], eax
+    ret
+.ui_y:
+    imul eax, ecx, 4
+    add [project_meta+68], eax
+    ret
+.ui_minimap:
+    xor dword [project_meta+72], 1
+    ret
+
+.controls:
+    mov eax, [property_index]
+    cmp eax, 0
+    je .ctl_skill1
+    cmp eax, 1
+    je .ctl_interact
+    cmp eax, 2
+    je .ctl_item
+    cmp eax, 3
+    je .ctl_jump
+    cmp eax, 4
+    je .ctl_skill2
+    cmp eax, 5
+    je .ctl_skill3
+    cmp eax, 6
+    je .ctl_skill4
+    ret
+.ctl_skill1: lea r8, [project_meta+76]
+    jmp .ctl_common
+.ctl_interact: lea r8, [project_meta+80]
+    jmp .ctl_common
+.ctl_item: lea r8, [project_meta+84]
+    jmp .ctl_common
+.ctl_jump: lea r8, [project_meta+88]
+    jmp .ctl_common
+.ctl_skill2: lea r8, [project_meta+92]
+    jmp .ctl_common
+.ctl_skill3: lea r8, [project_meta+96]
+    jmp .ctl_common
+.ctl_skill4: lea r8, [project_meta+100]
+.ctl_common:
+    add dword [r8], ecx
+    cmp dword [r8], 1
+    jge .ctl_upper
+    mov dword [r8], 1
+.ctl_upper:
+    cmp dword [r8], 0FEh
+    jle .done
+    mov dword [r8], 0FEh
     ret
 
 .project:
@@ -1352,6 +1475,10 @@ ts_get_setting_value:
     je .event
     cmp edx, 10
     je .map
+    cmp edx, 11
+    je .ui
+    cmp edx, 12
+    je .controls
     xor eax, eax
     ret
 .entity_param:
@@ -1381,6 +1508,10 @@ ts_get_setting_value:
     je .map_g_music
     cmp eax, 4
     je .map_g_bg
+    cmp eax, 5
+    je .map_g_fg
+    cmp eax, 6
+    je .map_g_tile
     xor eax, eax
     ret
 .map_g_color:
@@ -1397,6 +1528,60 @@ ts_get_setting_value:
     ret
 .map_g_bg:
     mov eax, [r8+48]
+    ret
+.map_g_fg:
+    mov eax, [r8+56]
+    ret
+.map_g_tile:
+    mov eax, [r8+60]
+    ret
+.ui:
+    mov eax, [property_index]
+    cmp eax, 0
+    je .ugx
+    cmp eax, 1
+    je .ugy
+    cmp eax, 2
+    je .ugm
+    xor eax, eax
+    ret
+.ugx: mov eax, [project_meta+64]
+    ret
+.ugy: mov eax, [project_meta+68]
+    ret
+.ugm: mov eax, [project_meta+72]
+    ret
+.controls:
+    mov eax, [property_index]
+    cmp eax, 0
+    je .cg1
+    cmp eax, 1
+    je .cgi
+    cmp eax, 2
+    je .cgit
+    cmp eax, 3
+    je .cgj
+    cmp eax, 4
+    je .cg2
+    cmp eax, 5
+    je .cg3
+    cmp eax, 6
+    je .cg4
+    xor eax, eax
+    ret
+.cg1: mov eax, [project_meta+76]
+    ret
+.cgi: mov eax, [project_meta+80]
+    ret
+.cgit: mov eax, [project_meta+84]
+    ret
+.cgj: mov eax, [project_meta+88]
+    ret
+.cg2: mov eax, [project_meta+92]
+    ret
+.cg3: mov eax, [project_meta+96]
+    ret
+.cg4: mov eax, [project_meta+100]
     ret
 
 .project:
