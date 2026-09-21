@@ -248,6 +248,10 @@ init_project_systems:
     mov dword [monster_defs+52], 1
     mov dword [monster_defs+56], AI_CHASE
     mov dword [monster_defs+60], 2
+    mov dword [monster_defs+64], 50
+    mov dword [monster_defs+68], 1
+    mov dword [monster_defs+72], 5
+    mov dword [monster_defs+76], -1
 
     mov dword [item_count], 1
     lea rcx, [items]
@@ -1054,6 +1058,11 @@ system_keydown:
     mov eax, 9
     jmp .nf_check
 .nf_event:
+    cmp dword [editor_panel_mode], 5
+    jne .nf_event_real
+    mov eax, 11
+    jmp .nf_check
+.nf_event_real:
     cmp dword [editor_panel_mode], 9
     jne .nf_ui
     mov eax, 4
@@ -1851,6 +1860,10 @@ ts_add_database_record:
     mov dword [monster_defs+rax+36], 5
     mov dword [monster_defs+rax+40], 1
     mov dword [monster_defs+rax+56], AI_CHASE
+    mov dword [monster_defs+rax+64], 50
+    mov dword [monster_defs+rax+68], 1
+    mov dword [monster_defs+rax+72], 5
+    mov dword [monster_defs+rax+76], -1
     inc dword [monster_count]
     jmp .done
 .item:
