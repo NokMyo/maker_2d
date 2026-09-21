@@ -97,7 +97,7 @@ section .data
     load_error_title db "Leella Prelude Runtime",0
     load_error_text  db "project.lprj could not be loaded.",0
 
-    txt_help         db "A/D or arrows: move   Space: jump   X: attack   Esc: quit",0
+    txt_help         db "A/D or arrows: move   Space: jump   X: attack   E: interact   Esc: quit",0
     txt_help_len     equ $-txt_help-1
     txt_runtime      db "LEELLA PRELUDE TEST RUNTIME",0
     txt_runtime_len  equ $-txt_runtime-1
