@@ -166,6 +166,11 @@ section .bss
     attack_ticks     resd 1
     attack_cooldown  resd 1
     attack_hit_done  resd 1
+    attack_total_ticks resd 1
+    attack_frame_ticks resd 1
+    attack_anim_id   resd 1
+    attack_hits_done resd 1
+    attack_last_frame resd 1
 
     player_hp        resd 1
     invuln_ticks     resd 1
@@ -804,7 +809,12 @@ update_game:
     jne .physics
 
     mov dword [attack_ticks], 8
+    mov dword [attack_total_ticks], 8
+    mov dword [attack_frame_ticks], 1
+    mov dword [attack_anim_id], -1
     mov dword [attack_cooldown], 18
+    mov dword [attack_hits_done], 0
+    mov dword [attack_last_frame], -1
 
     cmp dword [skill_count], 0
     jle .attack_ready
@@ -821,17 +831,34 @@ update_game:
     mov [attack_cooldown], eax
 
     mov eax, [skills+56]
+    mov [attack_anim_id], eax
     cmp eax, 0
     jl .attack_ready
     cmp eax, [animation_count]
     jae .attack_ready
+
     imul eax, ANIMATION_SIZE
-    mov eax, [animations+rax+32]
+    lea r10, [animations+rax]
+
+    mov eax, [r10+36]              ; frame_ms
+    add eax, 15
+    cdq
+    mov ecx, 16
+    idiv ecx
     cmp eax, 1
-    jge .ticks_ready
+    jge .frame_ticks_ok
     mov eax, 1
-.ticks_ready:
+.frame_ticks_ok:
+    mov [attack_frame_ticks], eax
+
+    mov ecx, [r10+32]              ; frame_count
+    cmp ecx, 1
+    jge .frame_count_ok
+    mov ecx, 1
+.frame_count_ok:
+    imul eax, ecx
     mov [attack_ticks], eax
+    mov [attack_total_ticks], eax
 
 .attack_ready:
     mov dword [attack_hit_done], 0
@@ -928,6 +955,53 @@ update_game:
     cmp dword [attack_ticks], 0
     jle .after_attack
     dec dword [attack_ticks]
+
+    mov eax, [attack_total_ticks]
+    sub eax, [attack_ticks]         ; elapsed ticks
+    cdq
+    mov ecx, [attack_frame_ticks]
+    cmp ecx, 1
+    jge .attack_div_ok
+    mov ecx, 1
+.attack_div_ok:
+    idiv ecx                        ; eax = current animation frame
+    mov [rbp-20], eax
+
+    cmp eax, [attack_last_frame]
+    je .after_attack
+
+    mov edx, [attack_anim_id]
+    cmp edx, 0
+    jl .legacy_hit_window
+    cmp edx, [animation_count]
+    jae .legacy_hit_window
+    imul edx, ANIMATION_SIZE
+    lea r10, [animations+rdx]
+
+    mov eax, [rbp-20]
+    cmp eax, [r10+40]
+    jl .after_attack
+    cmp eax, [r10+44]
+    jg .after_attack
+
+    mov eax, 1
+    cmp dword [skill_count], 0
+    jle .hit_count_ready
+    mov eax, [skills+48]
+    cmp eax, 1
+    jge .hit_count_ready
+    mov eax, 1
+.hit_count_ready:
+    cmp [attack_hits_done], eax
+    jae .after_attack
+
+    call attack_monsters
+    inc dword [attack_hits_done]
+    mov eax, [rbp-20]
+    mov [attack_last_frame], eax
+    jmp .after_attack
+
+.legacy_hit_window:
     cmp dword [attack_hit_done], 0
     jne .after_attack
     call attack_monsters
@@ -981,44 +1055,76 @@ attack_monsters:
     cmp dword [r13+0], ENTITY_MONSTER
     jne .next
 
+    ; Resolve current attack box in world coordinates.
+    mov dword [rbp-8], 0           ; offset x
+    mov dword [rbp-12], -8         ; offset y
+    mov dword [rbp-16], 92         ; width
+    mov dword [rbp-20], 70         ; height
+
+    mov eax, [attack_anim_id]
+    cmp eax, 0
+    jl .box_ready
+    cmp eax, [animation_count]
+    jae .box_ready
+    imul eax, ANIMATION_SIZE
+    lea r10, [animations+rax]
+    mov eax, [r10+48]
+    mov [rbp-8], eax
+    mov eax, [r10+52]
+    mov [rbp-12], eax
+    mov eax, [r10+56]
+    cmp eax, 1
+    jl .keep_width
+    mov [rbp-16], eax
+.keep_width:
+    mov eax, [r10+60]
+    cmp eax, 1
+    jl .box_ready
+    mov [rbp-20], eax
+
+.box_ready:
+    ; Monster center point.
     mov eax, [r13+4]
-    sub eax, [player_x]
+    add eax, 14
+    mov [rbp-24], eax
+    mov eax, [r13+8]
+    add eax, 18
+    mov [rbp-28], eax
+
+    mov eax, [player_y]
+    add eax, [rbp-12]
+    mov edx, eax                    ; top
+    add eax, [rbp-20]              ; bottom
+    cmp dword [rbp-28], edx
+    jl .next
+    cmp dword [rbp-28], eax
+    jg .next
 
     cmp dword [facing_right], 0
-    je .left_facing
+    je .box_left
 
-    cmp eax, 0
+    mov eax, [player_x]
+    add eax, PLAYER_W
+    add eax, [rbp-8]               ; left
+    mov edx, eax
+    add eax, [rbp-16]              ; right
+    cmp dword [rbp-24], edx
     jl .next
-    mov edx, 92
-    cmp dword [skill_count], 0
-    jle .right_range_ready
-    mov edx, [skills+44]
-    add edx, PLAYER_W
-.right_range_ready:
-    cmp eax, edx
+    cmp dword [rbp-24], eax
     jg .next
-    jmp .vertical
+    jmp .apply_damage
 
-.left_facing:
-    cmp eax, 0
-    jg .next
-    mov edx, 92
-    cmp dword [skill_count], 0
-    jle .left_range_ready
-    mov edx, [skills+44]
-    add edx, PLAYER_W
-.left_range_ready:
-    neg edx
-    cmp eax, edx
+.box_left:
+    mov eax, [player_x]
+    sub eax, [rbp-8]               ; right anchor
+    mov edx, eax
+    sub edx, [rbp-16]              ; left
+    cmp dword [rbp-24], edx
     jl .next
+    cmp dword [rbp-24], eax
+    jg .next
 
-.vertical:
-    mov eax, [r13+8]
-    sub eax, [player_y]
-    cmp eax, -50
-    jl .next
-    cmp eax, 70
-    jg .next
+.apply_damage:
 
     lea rax, [enemy_hp]
     mov ecx, r12d
@@ -1034,6 +1140,18 @@ attack_monsters:
     add edx, [skills+32]
 .damage_ready:
     sub dword [rax], edx
+
+    ; Skill knockback on every successful hit.
+    cmp dword [skill_count], 0
+    jle .after_knockback
+    mov edx, [skills+52]
+    cmp dword [facing_right], 0
+    je .knock_monster_left
+    add [r13+4], edx
+    jmp .after_knockback
+.knock_monster_left:
+    sub [r13+4], edx
+.after_knockback:
     cmp dword [rax], 0
     jg .next
 
