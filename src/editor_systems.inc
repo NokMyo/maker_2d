@@ -9,6 +9,7 @@ section .data
     ts_name_item         db "Item",0
     ts_name_quest        db "Quest",0
     ts_name_variable     db "Variable",0
+    ts_name_event        db "Event",0
 
     ts_default_map       db "Map_001",0
     ts_default_idle      db "PlayerIdle",0
@@ -28,7 +29,7 @@ section .data
     ts_fmt_map           db "Map %d / %d",0
     ts_fmt_mode          db "Editor mode %d   field %d",0
     ts_fmt_value         db "Value: %d",0
-    ts_help1             db "F1 Project  F2 Player  F6 Database",0
+    ts_help1             db "F1 Project  F2 Player  F6 DB cycle",0
     ts_help1_len         equ $-ts_help1-1
     ts_help2             db "TAB field  +/- edit  INS add record",0
     ts_help2_len         equ $-ts_help2-1
@@ -49,6 +50,7 @@ section .bss
     items                resb MAX_ITEMS*ITEM_SIZE
     quests               resb MAX_QUESTS*QUEST_SIZE
     variables            resb MAX_VARIABLES*VARIABLE_SIZE
+    events               resb MAX_EVENTS*EVENT_SIZE
 
     map_count            resd 1
     active_map           resd 1
@@ -67,6 +69,7 @@ section .bss
     item_count           resd 1
     quest_count          resd 1
     variable_count       resd 1
+    event_count          resd 1
 
     editor_panel_mode    resd 1
     property_index       resd 1
@@ -183,6 +186,13 @@ init_project_systems:
     call lstrcpyA
     mov dword [variables+32], 0
 
+    mov dword [event_count], 1
+    lea rcx, [events]
+    lea rdx, [ts_name_event]
+    call lstrcpyA
+    mov dword [events+32], 1
+    mov dword [events+48], EVENT_DIALOGUE
+
     leave
     ret
 
@@ -261,7 +271,9 @@ save_project:
     mov [database_header+16], eax
     mov eax, [variable_count]
     mov [database_header+20], eax
-    mov qword [database_header+24], 0
+    mov eax, [event_count]
+    mov [database_header+24], eax
+    mov dword [database_header+28], 0
 
     lea rcx, [project_path]
     mov edx, GENERIC_WRITE
@@ -395,6 +407,15 @@ save_project:
     imul eax, VARIABLE_SIZE
     mov rcx, [rbp-16]
     lea rdx, [variables]
+    mov r8d, eax
+    call ts_write_block
+    test eax, eax
+    jz .close_fail
+
+    mov eax, [event_count]
+    imul eax, EVENT_SIZE
+    mov rcx, [rbp-16]
+    lea rdx, [events]
     mov r8d, eax
     call ts_write_block
     test eax, eax
@@ -574,6 +595,10 @@ load_project:
     cmp eax, MAX_VARIABLES
     ja .close_fail
     mov [variable_count], eax
+    mov eax, [database_header+24]
+    cmp eax, MAX_EVENTS
+    ja .close_fail
+    mov [event_count], eax
 
     mov eax, [animation_count]
     imul eax, ANIMATION_SIZE
@@ -624,6 +649,15 @@ load_project:
     imul eax, VARIABLE_SIZE
     mov rcx, [rbp-16]
     lea rdx, [variables]
+    mov r8d, eax
+    call ts_read_block
+    test eax, eax
+    jz .close_fail
+
+    mov eax, [event_count]
+    imul eax, EVENT_SIZE
+    mov rcx, [rbp-16]
+    lea rdx, [events]
     mov r8d, eax
     call ts_read_block
     test eax, eax
@@ -768,7 +802,7 @@ system_keydown:
     mov eax, [editor_panel_mode]
     cmp eax, 3
     jb .db_first
-    cmp eax, 8
+    cmp eax, 9
     jae .db_first
     inc eax
     mov [editor_panel_mode], eax
@@ -825,6 +859,8 @@ system_keydown:
 ; ------------------------------------------------------------
 ts_adjust_setting:
     mov edx, [editor_panel_mode]
+    cmp edx, 0
+    je .entity_param
     cmp edx, 1
     je .project
     cmp edx, 2
@@ -841,6 +877,31 @@ ts_adjust_setting:
     je .quest
     cmp edx, 8
     je .variable
+    cmp edx, 9
+    je .event
+    ret
+
+.entity_param:
+    mov eax, [selected_entity]
+    cmp eax, 0
+    jl .done
+    cmp eax, [entity_count]
+    jae .done
+    imul eax, ENTITY_SIZE
+    add dword [entities+rax+12], ecx
+    ret
+
+.entity_param:
+    mov eax, [selected_entity]
+    cmp eax, 0
+    jl .zero
+    cmp eax, [entity_count]
+    jae .zero
+    imul eax, ENTITY_SIZE
+    mov eax, [entities+rax+12]
+    ret
+.zero:
+    xor eax, eax
     ret
 
 .project:
@@ -958,6 +1019,31 @@ ts_adjust_setting:
     imul eax, VARIABLE_SIZE
     lea r8, [variables+rax]
     add dword [r8+32], ecx
+    ret
+.event:
+    mov eax, [database_index]
+    cmp eax, [event_count]
+    jae .done
+    imul eax, EVENT_SIZE
+    lea r8, [events+rax]
+    mov eax, [property_index]
+    cmp eax, 0
+    jne .event_command
+    add dword [r8+32], ecx
+    cmp dword [r8+32], 0
+    jge .event_max
+    mov dword [r8+32], 0
+.event_max:
+    cmp dword [r8+32], EVENT_COMMANDS
+    jle .done
+    mov dword [r8+32], EVENT_COMMANDS
+    ret
+.event_command:
+    ; fields 1..4 edit first command opcode/a/b/c
+    dec eax
+    imul eax, 4
+    add eax, 48
+    add dword [r8+rax], ecx
 .done:
     ret
 
@@ -966,6 +1052,8 @@ ts_adjust_setting:
 ; ------------------------------------------------------------
 ts_get_setting_value:
     mov edx, [editor_panel_mode]
+    cmp edx, 0
+    je .entity_param
     cmp edx, 1
     je .project
     cmp edx, 2
@@ -982,6 +1070,8 @@ ts_get_setting_value:
     je .quest
     cmp edx, 8
     je .variable
+    cmp edx, 9
+    je .event
     xor eax, eax
     ret
 .project:
@@ -1051,6 +1141,21 @@ ts_get_setting_value:
     imul eax, VARIABLE_SIZE
     mov eax, [variables+rax+32]
     ret
+.event:
+    mov eax, [database_index]
+    imul eax, EVENT_SIZE
+    lea r8, [events+rax]
+    mov eax, [property_index]
+    cmp eax, 0
+    jne .event_field
+    mov eax, [r8+32]
+    ret
+.event_field:
+    dec eax
+    imul eax, 4
+    add eax, 48
+    mov eax, [r8+rax]
+    ret
 
 ; ------------------------------------------------------------
 ; add a generic DB record in current DB mode
@@ -1072,6 +1177,8 @@ ts_add_database_record:
     je .quest
     cmp eax, 8
     je .variable
+    cmp eax, 9
+    je .event
     jmp .done
 .animation:
     mov eax, [animation_count]
@@ -1151,6 +1258,21 @@ ts_add_database_record:
     lea rdx, [ts_name_variable]
     call lstrcpyA
     inc dword [variable_count]
+    jmp .done
+.event:
+    mov eax, [event_count]
+    cmp eax, MAX_EVENTS
+    jae .done
+    mov [database_index], eax
+    imul eax, EVENT_SIZE
+    lea rcx, [events+rax]
+    lea rdx, [ts_name_event]
+    call lstrcpyA
+    mov eax, [database_index]
+    imul eax, EVENT_SIZE
+    mov dword [events+rax+32], 1
+    mov dword [events+rax+48], EVENT_DIALOGUE
+    inc dword [event_count]
 .done:
     leave
     ret
