@@ -53,7 +53,11 @@
 ; +32 dword start_map
 ; +36 dword save_slots (1..3)
 ; +40 dword ui_flags
-; +44..63 reserved
+; +44 dword player_idle_animation
+; +48 dword player_walk_animation
+; +52 dword player_air_animation
+; +56 dword player_hit_animation
+; +60 dword player_dead_animation
 ;
 ; ------------------------------------------------------------
 ; Serialized data order
