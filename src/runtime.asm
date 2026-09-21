@@ -514,12 +514,25 @@ WndProc:
     add eax, PLAYER_H
     mov [temp_rect+12], eax
 
-    xor edx, edx
+    mov edx, [project_meta+44]     ; idle
     cmp dword [attack_ticks], 0
-    jle .player_anim_ready
+    jg .player_attack_anim
+    cmp dword [player_grounded], 0
+    je .player_air_anim
+    cmp dword [player_vx], 0
+    je .player_anim_ready
+    mov edx, [project_meta+48]     ; walk
+    jmp .player_anim_ready
+
+.player_air_anim:
+    mov edx, [project_meta+52]     ; air
+    jmp .player_anim_ready
+
+.player_attack_anim:
     cmp dword [skill_count], 0
     jle .player_anim_ready
     mov edx, [skills+56]
+
 .player_anim_ready:
     mov rcx, [rbp-32]
     mov r8d, [temp_rect+0]
@@ -1080,6 +1093,25 @@ update_monsters_and_damage:
     cmp dword [r13+0], ENTITY_MONSTER
     jne .next
 
+    ; Resolve AI and movement speed from monster database.
+    mov dword [rbp-12], 1
+    mov dword [rbp-16], AI_CHASE
+    mov eax, [r13+12]
+    cmp eax, 0
+    jl .ai_resolved
+    cmp eax, [monster_count]
+    jae .ai_resolved
+    imul eax, MONSTER_SIZE
+    mov edx, [monster_defs+rax+40]
+    cmp edx, 1
+    jge .speed_ok
+    mov edx, 1
+.speed_ok:
+    mov [rbp-12], edx
+    mov edx, [monster_defs+rax+56]
+    mov [rbp-16], edx
+
+.ai_resolved:
     ; dx = player_x - monster_x
     mov eax, [player_x]
     sub eax, [r13+4]
@@ -1090,18 +1122,58 @@ update_monsters_and_damage:
     jns .abs_dx
     neg ecx
 .abs_dx:
-    ; chase only inside 300 px and stop close to the player
+    cmp dword [rbp-16], AI_IDLE
+    je .contact
+    cmp dword [rbp-16], AI_RANGED
+    je .ranged_ai
+    cmp dword [rbp-16], AI_BOSS
+    je .boss_ai
+
+    ; Chase AI: pursue inside 300 px, stop at melee distance.
     cmp ecx, 300
     jg .contact
     cmp ecx, 36
     jl .contact
+    jmp .move_toward
 
+.boss_ai:
+    cmp ecx, 520
+    jg .contact
+    cmp ecx, 42
+    jl .contact
+    mov eax, [rbp-12]
+    shl eax, 1
+    mov [rbp-12], eax
+    jmp .move_toward
+
+.ranged_ai:
+    ; Keep approximately 120..220 px distance.
+    cmp ecx, 120
+    jl .move_away
+    cmp ecx, 220
+    jg .move_toward
+    jmp .contact
+
+.move_toward:
     cmp dword [rbp-8], 0
     jl .move_left
-    inc dword [r13+4]
+    mov eax, [rbp-12]
+    add [r13+4], eax
     jmp .contact
 .move_left:
-    dec dword [r13+4]
+    mov eax, [rbp-12]
+    sub [r13+4], eax
+    jmp .contact
+
+.move_away:
+    cmp dword [rbp-8], 0
+    jl .away_right
+    mov eax, [rbp-12]
+    sub [r13+4], eax
+    jmp .contact
+.away_right:
+    mov eax, [rbp-12]
+    add [r13+4], eax
 
 .contact:
     cmp dword [invuln_ticks], 0
