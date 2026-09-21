@@ -1,30 +1,85 @@
 # Leella Prelude Architecture
 
-## Target
+## Current target
 
-- Platform: Windows x64 first
+- Platform: Windows x64
 - Assembler: NASM
 - ABI: Microsoft x64
-- GUI: direct Win32 API
-- Rendering: GDI prototype, planned Direct2D/Direct3D path later
-- Runtime: separate editor/runtime executables, both written in assembly
+- Editor UI: direct Win32 API
+- Prototype rendering: GDI
+- Runtime: separate native executable
+- Program logic: assembly only
+- C/C++ runtime: not used
+
+## Current executable split
+
+### LeellaPrelude.exe
+
+Built from `src/prelude.asm`.
+
+Responsibilities:
+
+- native editor window
+- platform and entity authoring
+- world-space editing camera
+- selection/manipulation
+- LPRJ serialization
+- test-run process launch
+
+### LeellaRuntime.exe
+
+Built from `src/runtime.asm`.
+
+Responsibilities:
+
+- LPRJ loading
+- input
+- player physics
+- platform collision
+- camera
+- prototype combat
+- monster behavior
+- NPC/portal interaction
+- runtime rendering
+
+### Shared format
+
+`src/project.inc` defines constants and record layouts shared by both executables.
+
+## Data flow
+
+Editor memory
+→ `project.lprj`
+→ Runtime loader
+→ playable test map
+
+The runtime does not depend on the editor process after launch.
 
 ## Repository rule
 
-Executable program logic must remain assembly-only. Documentation and non-executable metadata may use their native text formats.
+Executable program logic must remain x86-64 assembly. Documentation and non-executable metadata may use their native text formats.
 
-## Core modules planned
+## Why GDI first
+
+The current GDI renderer is deliberately temporary. It lets the editor, serialization, physics and test-play loop be proven before the project adds a larger rendering/asset layer.
+
+The intended next rendering step is a native Direct2D or Direct3D assembly layer while retaining the same project data model.
+
+## Planned module split
+
+The prototype is intentionally still concentrated in two translation units. Once the feature boundaries settle, it can be split into assembly include/modules such as:
 
 - editor/window.asm
 - editor/canvas.asm
 - editor/tools.asm
-- editor/properties.asm
+- editor/selection.asm
 - core/project.asm
-- core/map.asm
 - core/serializer.asm
 - runtime/player.asm
 - runtime/physics.asm
 - runtime/combat.asm
 - runtime/events.asm
+- render/gdi.asm
+- render/assets.asm
 
-The prototype intentionally starts as one assembly translation unit. It will be split after the first editor interactions stabilize.
+This split must not introduce a second implementation language.
