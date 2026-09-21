@@ -9,6 +9,7 @@
 %define PROJECT_MAGIC_QWORD 0x3230303050525354 ; "TSRP0002" little-endian
 %define PROJECT_VERSION     2
 %define PROJECT_HEADER_SIZE 64
+%define PROJECT_META_SIZE   64
 
 %define MAX_PLATFORMS       1024
 %define PLATFORM_SIZE       16
@@ -46,9 +47,19 @@
 ; +60 dword project_flags
 ;
 ; ------------------------------------------------------------
+; Project metadata — 64 bytes
+; ------------------------------------------------------------
+; +00 char project_name[32]
+; +32 dword start_map
+; +36 dword save_slots (1..3)
+; +40 dword ui_flags
+; +44..63 reserved
+;
+; ------------------------------------------------------------
 ; Serialized data order
 ; ------------------------------------------------------------
 ; header
+; project metadata
 ; platform[platform_count]
 ; entity[entity_count]
 ; platform_map_id[platform_count] dword
