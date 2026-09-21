@@ -18,7 +18,8 @@
 ; +44  dword music_id
 ; +48  dword background_sprite_id (-1 = solid color)
 ; +52  dword layer_flags
-; +56..63 reserved
+; +56  dword foreground_sprite_id (-1 = none)
+; +60  dword tile_sprite_id (-1 = none)
 
 ; ------------------------------------------------------------
 ; Sprite asset database (BMP in the current native GDI renderer)
