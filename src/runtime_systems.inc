@@ -1349,91 +1349,268 @@ equipment_attack_bonus:
 runtime_draw_background:
     push rbp
     mov rbp, rsp
-    sub rsp, 128
-    mov [rbp-40], r12
-    mov [rbp-48], r13
-    mov [rbp-56], r14
-
-    mov r12, rcx
+    sub rsp, 48
+    mov [rbp-8], rcx
     mov eax, [active_map]
     imul eax, MAP_SIZE
-    lea r13, [maps+rax]
-    mov eax, [r13+48]
-    cmp eax, 0
+    mov edx, [maps+rax+48]
+    cmp edx, 0
+    jl .none
+    mov rcx, [rbp-8]
+    call gdip_draw_fullscreen
+    leave
+    ret
+.none:
+    xor eax, eax
+    leave
+    ret
+
+runtime_draw_foreground:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 48
+    mov [rbp-8], rcx
+    mov eax, [active_map]
+    imul eax, MAP_SIZE
+    mov edx, [maps+rax+56]
+    cmp edx, 0
+    jl .none
+    mov rcx, [rbp-8]
+    call gdip_draw_fullscreen
+    leave
+    ret
+.none:
+    xor eax, eax
+    leave
+    ret
+
+runtime_draw_tiles:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 48
+    mov [rbp-8], rcx
+    mov eax, [active_map]
+    imul eax, MAP_SIZE
+    mov edx, [maps+rax+60]
+    cmp edx, 0
+    jl .none
+    mov rcx, [rbp-8]
+    call gdip_draw_tiled
+    leave
+    ret
+.none:
+    xor eax, eax
+    leave
+    ret
+
+; ------------------------------------------------------------
+; GDI+ sprite loader. ecx = sprite id, rax = GpImage* or 0.
+; ------------------------------------------------------------
+gdip_open_sprite:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 64
+
+    cmp ecx, 0
     jl .fail
-    cmp eax, [sprite_count]
+    cmp ecx, [sprite_count]
     jae .fail
 
+    mov eax, ecx
     imul eax, SPRITE_SIZE
-    lea r13, [sprites+rax]
-    cmp byte [r13+32], 0
+    lea r10, [sprites+rax]
+    cmp byte [r10+32], 0
     je .fail
 
     xor ecx, ecx
-    lea rdx, [r13+32]
-    xor r8d, r8d
-    xor r9d, r9d
-    mov qword [rsp+32], 0
-    mov qword [rsp+40], 02010h
-    call LoadImageA
+    xor edx, edx
+    lea r8, [r10+32]
+    mov r9d, -1
+    lea rax, [gdip_wide_path]
+    mov [rsp+32], rax
+    mov qword [rsp+40], 260
+    call MultiByteToWideChar
+    test eax, eax
+    jz .fail
+
+    mov qword [gdip_image], 0
+    lea rcx, [gdip_wide_path]
+    lea rdx, [gdip_image]
+    call GdipLoadImageFromFile
+    test eax, eax
+    jnz .fail
+
+    mov rax, [gdip_image]
+    leave
+    ret
+.fail:
+    xor eax, eax
+    leave
+    ret
+
+; ------------------------------------------------------------
+; rcx = HDC, edx = sprite id
+; ------------------------------------------------------------
+gdip_draw_fullscreen:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 144
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+    mov r12, rcx
+    mov ecx, edx
+    call gdip_open_sprite
     test rax, rax
     jz .fail
-    mov r14, rax
+    mov r13, rax
 
-    mov rcx, rax
-    mov edx, 32
-    lea r8, [ts_bitmap_info]
-    call GetObjectA
+    mov rcx, r13
+    lea rdx, [gdip_width]
+    call GdipGetImageWidth
     test eax, eax
-    jz .delete_bitmap
+    jnz .dispose
+    mov rcx, r13
+    lea rdx, [gdip_height]
+    call GdipGetImageHeight
+    test eax, eax
+    jnz .dispose
 
+    mov qword [gdip_graphics], 0
     mov rcx, r12
-    call CreateCompatibleDC
-    test rax, rax
-    jz .delete_bitmap
-    mov [rbp-16], rax
+    lea rdx, [gdip_graphics]
+    call GdipCreateFromHDC
+    test eax, eax
+    jnz .dispose
 
-    mov rcx, rax
-    mov rdx, r14
-    call SelectObject
-    mov [rbp-24], rax
-
-    mov rcx, r12
-    xor edx, edx
+    mov rcx, [gdip_graphics]
+    mov rdx, r13
     xor r8d, r8d
-    mov r9d, [client_rect+8]
-    mov eax, [client_rect+12]
+    xor r9d, r9d
+    mov eax, [client_rect+8]
     mov [rsp+32], rax
-    mov rax, [rbp-16]
+    mov eax, [client_rect+12]
     mov [rsp+40], rax
     mov qword [rsp+48], 0
     mov qword [rsp+56], 0
-    mov eax, [ts_bitmap_info+4]
+    mov eax, [gdip_width]
     mov [rsp+64], rax
-    mov eax, [ts_bitmap_info+8]
+    mov eax, [gdip_height]
     mov [rsp+72], rax
-    mov qword [rsp+80], 00CC0020h
-    call StretchBlt
+    mov qword [rsp+80], 2
+    mov qword [rsp+88], 0
+    mov qword [rsp+96], 0
+    mov qword [rsp+104], 0
+    call GdipDrawImageRectRectI
 
-    mov rcx, [rbp-16]
-    mov rdx, [rbp-24]
-    call SelectObject
-    mov rcx, [rbp-16]
-    call DeleteDC
-    mov rcx, r14
-    call DeleteObject
+    mov rcx, [gdip_graphics]
+    call GdipDeleteGraphics
+    mov rcx, r13
+    call GdipDisposeImage
     mov eax, 1
     jmp .done
+.dispose:
+    mov rcx, r13
+    call GdipDisposeImage
+.fail:
+    xor eax, eax
+.done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
+    leave
+    ret
 
-.delete_bitmap:
-    mov rcx, r14
-    call DeleteObject
+; ------------------------------------------------------------
+; rcx = HDC, edx = sprite id. Repeat source image over client.
+; ------------------------------------------------------------
+gdip_draw_tiled:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 160
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+    mov [rbp-56], r14
+    mov [rbp-64], r15
+    mov r12, rcx
+    mov ecx, edx
+    call gdip_open_sprite
+    test rax, rax
+    jz .fail
+    mov r13, rax
+
+    mov rcx, r13
+    lea rdx, [gdip_width]
+    call GdipGetImageWidth
+    test eax, eax
+    jnz .dispose
+    mov rcx, r13
+    lea rdx, [gdip_height]
+    call GdipGetImageHeight
+    test eax, eax
+    jnz .dispose
+    cmp dword [gdip_width], 0
+    jle .dispose
+    cmp dword [gdip_height], 0
+    jle .dispose
+
+    mov qword [gdip_graphics], 0
+    mov rcx, r12
+    lea rdx, [gdip_graphics]
+    call GdipCreateFromHDC
+    test eax, eax
+    jnz .dispose
+
+    xor r15d, r15d
+.yloop:
+    cmp r15d, [client_rect+12]
+    jge .draw_done
+    xor r14d, r14d
+.xloop:
+    cmp r14d, [client_rect+8]
+    jge .ynext
+
+    mov rcx, [gdip_graphics]
+    mov rdx, r13
+    mov r8d, r14d
+    mov r9d, r15d
+    mov eax, [gdip_width]
+    mov [rsp+32], rax
+    mov eax, [gdip_height]
+    mov [rsp+40], rax
+    mov qword [rsp+48], 0
+    mov qword [rsp+56], 0
+    mov eax, [gdip_width]
+    mov [rsp+64], rax
+    mov eax, [gdip_height]
+    mov [rsp+72], rax
+    mov qword [rsp+80], 2
+    mov qword [rsp+88], 0
+    mov qword [rsp+96], 0
+    mov qword [rsp+104], 0
+    call GdipDrawImageRectRectI
+
+    add r14d, [gdip_width]
+    jmp .xloop
+.ynext:
+    add r15d, [gdip_height]
+    jmp .yloop
+
+.draw_done:
+    mov rcx, [gdip_graphics]
+    call GdipDeleteGraphics
+    mov rcx, r13
+    call GdipDisposeImage
+    mov eax, 1
+    jmp .done
+.dispose:
+    mov rcx, r13
+    call GdipDisposeImage
 .fail:
     xor eax, eax
 .done:
     mov r12, [rbp-40]
     mov r13, [rbp-48]
     mov r14, [rbp-56]
+    mov r15, [rbp-64]
     leave
     ret
 
@@ -1576,12 +1753,11 @@ runtime_draw_minimap:
 draw_animation:
     push rbp
     mov rbp, rsp
-    sub rsp, 128
+    sub rsp, 176
     mov [rbp-40], r12
     mov [rbp-48], r13
     mov [rbp-56], r14
     mov [rbp-64], r15
-
     mov r12, rcx
     mov [rbp-8], r8d
     mov [rbp-12], r9d
@@ -1590,62 +1766,43 @@ draw_animation:
     jl .fail
     cmp edx, [animation_count]
     jae .fail
-
     mov eax, edx
     imul eax, ANIMATION_SIZE
     lea r13, [animations+rax]
 
-    mov eax, [r13+68]
-    cmp eax, 0
-    jl .fail
-    cmp eax, [sprite_count]
-    jae .fail
-
-    imul eax, SPRITE_SIZE
-    lea r14, [sprites+rax]
-    cmp byte [r14+32], 0
-    je .fail
-
-    xor ecx, ecx
-    lea rdx, [r14+32]
-    xor r8d, r8d
-    xor r9d, r9d
-    mov qword [rsp+32], 0
-    mov qword [rsp+40], 02010h
-    call LoadImageA
+    mov ecx, [r13+68]
+    call gdip_open_sprite
     test rax, rax
     jz .fail
-    mov r15, rax
+    mov r14, rax
 
-    mov rcx, rax
-    mov edx, 32
-    lea r8, [ts_bitmap_info]
-    call GetObjectA
+    mov rcx, r14
+    lea rdx, [gdip_width]
+    call GdipGetImageWidth
     test eax, eax
-    jz .delete_bitmap
-
-    mov rcx, r12
-    call CreateCompatibleDC
-    test rax, rax
-    jz .delete_bitmap
-    mov [rbp-24], rax
-
-    mov rcx, rax
-    mov rdx, r15
-    call SelectObject
-    mov [rbp-32], rax
+    jnz .dispose
+    mov rcx, r14
+    lea rdx, [gdip_height]
+    call GdipGetImageHeight
+    test eax, eax
+    jnz .dispose
 
     mov ecx, [r13+32]
     cmp ecx, 1
     jge .frames_ok
     mov ecx, 1
 .frames_ok:
-    mov eax, [ts_bitmap_info+4]
-    cdq
-    idiv ecx
-    mov [rbp-16], eax              ; frame width
+    mov eax, [gdip_width]
+    xor edx, edx
+    div ecx
+    cmp eax, 1
+    jge .fw_ok
+    mov eax, 1
+.fw_ok:
+    mov [rbp-16], eax
 
     mov eax, [r13+36]
+    add eax, 15
     cdq
     mov ecx, 16
     idiv ecx
@@ -1660,42 +1817,52 @@ draw_animation:
 
     mov ecx, [r13+32]
     cmp ecx, 1
-    jge .mod_ok
+    jge .frame_mod
     mov ecx, 1
-.mod_ok:
+.frame_mod:
     xor edx, edx
     div ecx
     mov eax, edx
     imul eax, [rbp-16]
-    mov [rbp-20], eax              ; source x
+    mov [rbp-20], eax
 
+    mov qword [gdip_graphics], 0
     mov rcx, r12
-    mov edx, [rbp-8]
-    mov r8d, [rbp-12]
-    mov r9d, [rbp-16]
-    mov eax, [ts_bitmap_info+8]
+    lea rdx, [gdip_graphics]
+    call GdipCreateFromHDC
+    test eax, eax
+    jnz .dispose
+
+    mov rcx, [gdip_graphics]
+    mov rdx, r14
+    mov r8d, [rbp-8]
+    mov r9d, [rbp-12]
+    mov eax, [rbp-16]
     mov [rsp+32], rax
-    mov rax, [rbp-24]
+    mov eax, [gdip_height]
     mov [rsp+40], rax
     mov eax, [rbp-20]
     mov [rsp+48], rax
     mov qword [rsp+56], 0
-    mov qword [rsp+64], 00CC0020h
-    call BitBlt
+    mov eax, [rbp-16]
+    mov [rsp+64], rax
+    mov eax, [gdip_height]
+    mov [rsp+72], rax
+    mov qword [rsp+80], 2
+    mov qword [rsp+88], 0
+    mov qword [rsp+96], 0
+    mov qword [rsp+104], 0
+    call GdipDrawImageRectRectI
 
-    mov rcx, [rbp-24]
-    mov rdx, [rbp-32]
-    call SelectObject
-    mov rcx, [rbp-24]
-    call DeleteDC
-    mov rcx, r15
-    call DeleteObject
+    mov rcx, [gdip_graphics]
+    call GdipDeleteGraphics
+    mov rcx, r14
+    call GdipDisposeImage
     mov eax, 1
     jmp .done
-
-.delete_bitmap:
-    mov rcx, r15
-    call DeleteObject
+.dispose:
+    mov rcx, r14
+    call GdipDisposeImage
 .fail:
     xor eax, eax
 .done:
@@ -1705,7 +1872,6 @@ draw_animation:
     mov r15, [rbp-64]
     leave
     ret
-
 
 ; ------------------------------------------------------------
 ; Effective maximum HP -> eax
