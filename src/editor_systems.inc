@@ -2246,22 +2246,29 @@ draw_mode_preview:
     jae .done
     imul eax, EVENT_SIZE
     lea r13, [events+rax]
-    mov eax, [event_command_index]
+    xor r14d, r14d
+.event_loop:
+    cmp r14d, [r13+32]
+    jae .done
+    cmp r14d, EVENT_COMMANDS
+    jae .done
+
+    mov eax, r14d
     imul eax, EVENT_COMMAND_SIZE
-    lea r14, [r13+rax+48]
+    lea r10, [r13+rax+48]
 
     lea rcx, [ts_text_buffer]
     lea rdx, [ts_event_fmt]
-    mov r8d, [event_command_index]
+    mov r8d, r14d
     inc r8d
     mov r9d, [r13+32]
-    mov eax, [r14+0]
+    mov eax, [r10+0]
     mov [rsp+32], rax
-    mov eax, [r14+4]
+    mov eax, [r10+4]
     mov [rsp+40], rax
-    mov eax, [r14+8]
+    mov eax, [r10+8]
     mov [rsp+48], rax
-    mov eax, [r14+12]
+    mov eax, [r10+12]
     mov [rsp+56], rax
     call wsprintfA
     mov [rbp-8], eax
@@ -2271,12 +2278,16 @@ draw_mode_preview:
     add eax, 18
     mov edx, eax
     mov rcx, r12
-    mov r8d, 420
+    mov r8d, r14d
+    imul r8d, 20
+    add r8d, 420
     lea r9, [ts_text_buffer]
     mov eax, [rbp-8]
     mov [rsp+32], rax
     call TextOutA
-    jmp .done
+
+    inc r14d
+    jmp .event_loop
 
 .ui:
     lea rcx, [ts_text_buffer]
@@ -2326,6 +2337,125 @@ draw_mode_preview:
     leave
     ret
 
+
+; ------------------------------------------------------------
+; Right-panel click editor.
+; ecx=client x, edx=client y, eax=1 when consumed.
+; ------------------------------------------------------------
+advanced_panel_click:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 64
+    mov [rbp-4], ecx
+    mov [rbp-8], edx
+
+    cmp dword [editor_panel_mode], 3
+    je .animation
+    cmp dword [editor_panel_mode], 9
+    je .event
+    xor eax, eax
+    leave
+    ret
+
+.animation:
+    cmp dword [rbp-8], 446
+    jl .not_handled
+    cmp dword [rbp-8], 462
+    jg .not_handled
+
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    add eax, 18
+    mov ecx, [rbp-4]
+    sub ecx, eax
+    cmp ecx, 0
+    jl .not_handled
+    mov eax, ecx
+    cdq
+    mov ecx, 9
+    idiv ecx
+    mov [rbp-12], eax
+
+    mov ecx, [database_index]
+    cmp ecx, [animation_count]
+    jae .not_handled
+    imul ecx, ANIMATION_SIZE
+    lea r8, [animations+rcx]
+    mov eax, [rbp-12]
+    cmp eax, [r8+32]
+    jae .not_handled
+
+    mov ecx, 010h
+    call GetKeyState
+    test ax, 8000h
+    jnz .set_end
+    mov eax, [rbp-12]
+    mov [r8+40], eax
+    cmp eax, [r8+44]
+    jle .handled
+    mov [r8+44], eax
+    jmp .handled
+.set_end:
+    mov eax, [rbp-12]
+    mov [r8+44], eax
+    cmp eax, [r8+40]
+    jge .handled
+    mov [r8+40], eax
+    jmp .handled
+
+.event:
+    cmp dword [rbp-8], 420
+    jl .not_handled
+    mov eax, [rbp-8]
+    sub eax, 420
+    cdq
+    mov ecx, 20
+    idiv ecx
+    cmp eax, 0
+    jl .not_handled
+    cmp eax, EVENT_COMMANDS
+    jae .not_handled
+    mov ecx, [database_index]
+    cmp ecx, [event_count]
+    jae .not_handled
+    imul ecx, EVENT_SIZE
+    cmp eax, [events+rcx+32]
+    jae .not_handled
+    mov [event_command_index], eax
+    jmp .handled
+
+.handled:
+    mov eax, 1
+    leave
+    ret
+.not_handled:
+    xor eax, eax
+    leave
+    ret
+
+; ------------------------------------------------------------
+; Canvas click UI editor. ecx=x, edx=y.
+; ------------------------------------------------------------
+advanced_canvas_click:
+    cmp dword [editor_panel_mode], 11
+    jne .no
+    sub ecx, LEFT_PANEL
+    sub edx, TOP_BAR
+    cmp ecx, 0
+    jge .xok
+    xor ecx, ecx
+.xok:
+    cmp edx, 0
+    jge .yok
+    xor edx, edx
+.yok:
+    mov [project_meta+64], ecx
+    mov [project_meta+68], edx
+    mov eax, 1
+    ret
+.no:
+    xor eax, eax
+    ret
 
 ; ------------------------------------------------------------
 ; One-level scene Undo / Redo (platforms + entities + map ownership).
