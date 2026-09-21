@@ -18,14 +18,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v0.0.1
-          name: "Leella Prelude v0.0.1"
+          name: "Tsuramechoki v0.0.1"
           target_commitish: main
           prerelease: true
           generate_release_notes: false
           body: |
-            # Leella Prelude v0.0.1
+            # Tsuramechoki v0.0.1
 
-            르엘라 프렐류드의 첫 공개 프리뷰 릴리스입니다.
+            츠라메쵸키의 첫 공개 프리뷰 릴리스입니다.
 
             **100% x86-64 Assembly**로 작성된 2D 횡스크롤 액션 RPG 제작툴의 초기 MVP입니다.
 
@@ -34,7 +34,7 @@ jobs:
             - 발판 생성/선택/이동/삭제
             - 플레이어 시작점, 몬스터, NPC, 포탈 배치
             - 가로 맵 카메라 이동
-            - project.lprj 저장/불러오기
+            - project.tsrp 저장/불러오기
             - F5 테스트 플레이 실행
 
             ## Runtime
