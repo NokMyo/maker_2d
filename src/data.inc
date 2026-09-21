@@ -170,7 +170,7 @@
 %define MAX_EVENTS          64
 %define EVENT_COMMANDS      8
 %define EVENT_COMMAND_SIZE  16
-%define EVENT_SIZE          176
+%define EVENT_SIZE          304
 
 %define EVENT_DIALOGUE      1
 %define EVENT_SET_VAR       2
@@ -187,6 +187,7 @@
 ; +32 command_count
 ; +36..47 reserved
 ; +48 commands[8]
+; +176 char dialogue_text[128]
 ;
 ; command:
 ; +00 opcode
