@@ -619,8 +619,11 @@ WndProc:
     mov dword [temp_rect+4], 66
     mov eax, [player_hp]
     imul eax, 200
+    mov [rbp-84], eax
+    call get_effective_max_hp
+    mov ecx, eax
+    mov eax, [rbp-84]
     cdq
-    mov ecx, [player_max_hp]
     test ecx, ecx
     jg .hp_div
     mov ecx, 1
@@ -1505,7 +1508,7 @@ respawn_player:
     mov [player_y], eax
     mov dword [player_vx], 0
     mov dword [player_vy], 0
-    mov eax, [player_max_hp]
+    call get_effective_max_hp
     mov [player_hp], eax
     mov eax, [player_max_mp]
     mov [player_mp], eax
