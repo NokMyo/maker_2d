@@ -1,35 +1,58 @@
-# Controls
+# Tsuramechoki Controls
 
 ## Editor
 
 | Input | Action |
-| --- | --- |
-| Q | Select tool |
-| P | Platform tool |
-| 1 | Player start tool |
-| 2 | Monster tool |
-| 3 | NPC tool |
-| 4 | Portal tool |
-| Arrow keys | Move selected platform/entity by 16 px |
+|---|---|
+| Q | Select |
+| P | Platform |
+| 1 | Player start |
+| 2 | Monster |
+| 3 | NPC |
+| 4 | Portal |
+| 5 | Ladder |
+| 6 | Rope |
+| 7 | Checkpoint |
+| 8 | Decor |
+| 9 | Event trigger |
+| Arrow keys | Move selection 16 px |
 | Delete | Delete selection |
-| Mouse wheel | Pan horizontally |
-| Home | Reset editor camera to world X=0 |
-| Ctrl+N | Reset to starter project |
-| Ctrl+S | Save project.tsrp |
-| Ctrl+O | Load project.tsrp |
-| F5 | Save and launch TsuramechokiRuntime.exe |
+| Mouse wheel | Horizontal editor camera |
+| Home | Camera X = 0 |
+| Ctrl+N | New starter project |
+| Ctrl+S | Save project |
+| Ctrl+O | Load project |
+| Ctrl+M | Add map |
+| PgUp / PgDn | Previous / next map |
+| F1 | Project settings |
+| F2 | Player settings |
+| F6 | Cycle database |
+| F7 | Import BMP sprite sheet |
+| Tab | Next property field |
+| + / - | Adjust current value |
+| Insert | Add database record |
+| F5 | Save + test game |
+| F9 | Export Build/Game.exe |
 
-Platform editing uses a 16 px snap. Drag horizontally on the canvas while the Platform tool is active.
+When canvas mode is active, +/- changes the selected entity's `param`. This links a placed entity to database data: monster→monster ID, NPC→quest ID, portal→map ID, ladder/rope→length, event trigger→event ID.
 
 ## Runtime
 
 | Input | Action |
-| --- | --- |
-| A / Left | Move left |
-| D / Right | Move right |
+|---|---|
+| A/D or Left/Right | Move |
 | Space | Jump |
-| X | Melee attack |
-| E | Interact with NPC / portal |
+| Up/Down | Climb ladder/rope |
+| X | Attack |
+| E | Interact |
+| C | Use item 0 |
+| I | Inventory panel |
+| K | Skill panel |
+| J | Quest panel |
+| T | Stats panel |
+| V | Equip first owned weapon/armor |
+| F2 | Save |
+| F3 | Load |
+| F4 | Cycle save slot |
+| 1 / 2 | Select event choice |
 | Esc | Quit |
-
-The runtime is intentionally small. Its purpose is to prove that content authored in the editor can immediately become playable without another engine or language.
