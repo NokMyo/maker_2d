@@ -2264,6 +2264,255 @@ system_draw_panel:
     ret
 
 ; ------------------------------------------------------------
+; Editor GDI+ map layer preview.
+; ------------------------------------------------------------
+editor_gdip_open_sprite:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 64
+    cmp ecx, 0
+    jl .fail
+    cmp ecx, [sprite_count]
+    jae .fail
+    mov eax, ecx
+    imul eax, SPRITE_SIZE
+    lea r10, [sprites+rax]
+    cmp byte [r10+32], 0
+    je .fail
+
+    xor ecx, ecx
+    xor edx, edx
+    lea r8, [r10+32]
+    mov r9d, -1
+    lea rax, [editor_gdip_wide_path]
+    mov [rsp+32], rax
+    mov qword [rsp+40], 260
+    call MultiByteToWideChar
+    test eax, eax
+    jz .fail
+
+    mov qword [editor_gdip_image], 0
+    lea rcx, [editor_gdip_wide_path]
+    lea rdx, [editor_gdip_image]
+    call GdipLoadImageFromFile
+    test eax, eax
+    jnz .fail
+    mov rax, [editor_gdip_image]
+    leave
+    ret
+.fail:
+    xor eax, eax
+    leave
+    ret
+
+editor_draw_full_canvas:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 144
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+    mov r12, rcx
+    mov ecx, edx
+    call editor_gdip_open_sprite
+    test rax, rax
+    jz .fail
+    mov r13, rax
+
+    mov rcx, r13
+    lea rdx, [editor_gdip_width]
+    call GdipGetImageWidth
+    test eax, eax
+    jnz .dispose
+    mov rcx, r13
+    lea rdx, [editor_gdip_height]
+    call GdipGetImageHeight
+    test eax, eax
+    jnz .dispose
+
+    mov qword [editor_gdip_graphics], 0
+    mov rcx, r12
+    lea rdx, [editor_gdip_graphics]
+    call GdipCreateFromHDC
+    test eax, eax
+    jnz .dispose
+
+    mov rcx, [editor_gdip_graphics]
+    mov rdx, r13
+    mov r8d, LEFT_PANEL
+    mov r9d, TOP_BAR
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    sub eax, LEFT_PANEL
+    mov [rsp+32], rax
+    mov eax, [client_rect+12]
+    sub eax, BOTTOM_BAR
+    sub eax, TOP_BAR
+    mov [rsp+40], rax
+    mov qword [rsp+48], 0
+    mov qword [rsp+56], 0
+    mov eax, [editor_gdip_width]
+    mov [rsp+64], rax
+    mov eax, [editor_gdip_height]
+    mov [rsp+72], rax
+    mov qword [rsp+80], 2
+    mov qword [rsp+88], 0
+    mov qword [rsp+96], 0
+    mov qword [rsp+104], 0
+    call GdipDrawImageRectRectI
+
+    mov rcx, [editor_gdip_graphics]
+    call GdipDeleteGraphics
+    mov rcx, r13
+    call GdipDisposeImage
+    mov eax, 1
+    jmp .done
+.dispose:
+    mov rcx, r13
+    call GdipDisposeImage
+.fail:
+    xor eax, eax
+.done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
+    leave
+    ret
+
+editor_draw_tiled_canvas:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 160
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+    mov [rbp-56], r14
+    mov [rbp-64], r15
+    mov r12, rcx
+    mov ecx, edx
+    call editor_gdip_open_sprite
+    test rax, rax
+    jz .fail
+    mov r13, rax
+
+    mov rcx, r13
+    lea rdx, [editor_gdip_width]
+    call GdipGetImageWidth
+    test eax, eax
+    jnz .dispose
+    mov rcx, r13
+    lea rdx, [editor_gdip_height]
+    call GdipGetImageHeight
+    test eax, eax
+    jnz .dispose
+    cmp dword [editor_gdip_width], 0
+    jle .dispose
+    cmp dword [editor_gdip_height], 0
+    jle .dispose
+
+    mov qword [editor_gdip_graphics], 0
+    mov rcx, r12
+    lea rdx, [editor_gdip_graphics]
+    call GdipCreateFromHDC
+    test eax, eax
+    jnz .dispose
+
+    mov r15d, TOP_BAR
+.yloop:
+    mov eax, [client_rect+12]
+    sub eax, BOTTOM_BAR
+    cmp r15d, eax
+    jge .draw_done
+    mov r14d, LEFT_PANEL
+.xloop:
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    cmp r14d, eax
+    jge .ynext
+
+    mov rcx, [editor_gdip_graphics]
+    mov rdx, r13
+    mov r8d, r14d
+    mov r9d, r15d
+    mov eax, [editor_gdip_width]
+    mov [rsp+32], rax
+    mov eax, [editor_gdip_height]
+    mov [rsp+40], rax
+    mov qword [rsp+48], 0
+    mov qword [rsp+56], 0
+    mov eax, [editor_gdip_width]
+    mov [rsp+64], rax
+    mov eax, [editor_gdip_height]
+    mov [rsp+72], rax
+    mov qword [rsp+80], 2
+    mov qword [rsp+88], 0
+    mov qword [rsp+96], 0
+    mov qword [rsp+104], 0
+    call GdipDrawImageRectRectI
+    add r14d, [editor_gdip_width]
+    jmp .xloop
+.ynext:
+    add r15d, [editor_gdip_height]
+    jmp .yloop
+
+.draw_done:
+    mov rcx, [editor_gdip_graphics]
+    call GdipDeleteGraphics
+    mov rcx, r13
+    call GdipDisposeImage
+    mov eax, 1
+    jmp .done
+.dispose:
+    mov rcx, r13
+    call GdipDisposeImage
+.fail:
+    xor eax, eax
+.done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
+    mov r14, [rbp-56]
+    mov r15, [rbp-64]
+    leave
+    ret
+
+editor_draw_background_layers:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 48
+    mov [rbp-8], rcx
+    mov eax, [active_map]
+    imul eax, MAP_SIZE
+    mov edx, [maps+rax+48]
+    cmp edx, 0
+    jl .tiles
+    mov rcx, [rbp-8]
+    call editor_draw_full_canvas
+.tiles:
+    mov eax, [active_map]
+    imul eax, MAP_SIZE
+    mov edx, [maps+rax+60]
+    cmp edx, 0
+    jl .done
+    mov rcx, [rbp-8]
+    call editor_draw_tiled_canvas
+.done:
+    leave
+    ret
+
+editor_draw_foreground_layer:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 48
+    mov [rbp-8], rcx
+    mov eax, [active_map]
+    imul eax, MAP_SIZE
+    mov edx, [maps+rax+56]
+    cmp edx, 0
+    jl .done
+    mov rcx, [rbp-8]
+    call editor_draw_full_canvas
+.done:
+    leave
+    ret
+
+; ------------------------------------------------------------
 ; Visual previews for animation/event/UI editor modes.
 ; ------------------------------------------------------------
 draw_mode_preview:
