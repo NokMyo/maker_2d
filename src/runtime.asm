@@ -60,6 +60,16 @@ extern CloseHandle
 extern MessageBoxA
 extern wsprintfA
 extern lstrlenA
+extern MultiByteToWideChar
+extern GdiplusStartup
+extern GdiplusShutdown
+extern GdipLoadImageFromFile
+extern GdipDisposeImage
+extern GdipGetImageWidth
+extern GdipGetImageHeight
+extern GdipCreateFromHDC
+extern GdipDeleteGraphics
+extern GdipDrawImageRectRectI
 
 %define CS_HREDRAW          0x0002
 %define CS_VREDRAW          0x0001
@@ -139,6 +149,13 @@ section .data
     col_hp_bg        dd 0x003A3531
     col_dialog       dd 0x00282320
 
+    gdip_startup_input:
+        dd 1
+        dd 0
+        dq 0
+        dd 0
+        dd 0
+
 section .bss
     hinstance        resq 1
     hwnd_main        resq 1
@@ -148,6 +165,12 @@ section .bss
     client_rect      resd 4
     temp_rect        resd 4
     io_bytes         resd 1
+    gdip_token       resq 1
+    gdip_wide_path   resw 260
+    gdip_image       resq 1
+    gdip_graphics    resq 1
+    gdip_width       resd 1
+    gdip_height      resd 1
 
     platform_count   resd 1
     entity_count     resd 1
@@ -198,6 +221,11 @@ mainCRTStartup:
     call MessageBoxA
 
 .project_ok:
+    lea rcx, [gdip_token]
+    lea rdx, [gdip_startup_input]
+    xor r8d, r8d
+    call GdiplusStartup
+
     call runtime_init_state
     call initialize_player
 
@@ -280,6 +308,11 @@ mainCRTStartup:
     jmp .loop
 
 .quit:
+    mov rcx, [gdip_token]
+    test rcx, rcx
+    jz .quit_exit
+    call GdiplusShutdown
+.quit_exit:
     mov ecx, dword [msg_buf+16]
     call ExitProcess
 
@@ -362,6 +395,12 @@ WndProc:
     call FillRect
     mov rcx, [rbp-40]
     call DeleteObject
+
+    mov rcx, [rbp-32]
+    call runtime_draw_background
+
+    mov rcx, [rbp-32]
+    call runtime_draw_tiles
 
     ; platforms
     mov ecx, PS_SOLID
@@ -604,6 +643,9 @@ WndProc:
     call DeleteObject
 
 .hud:
+    mov rcx, [rbp-32]
+    call runtime_draw_foreground
+
     ; HP background at configured HUD anchor.
     mov eax, [project_meta+64]
     mov [temp_rect+0], eax
@@ -703,6 +745,8 @@ WndProc:
 
     mov rcx, [rbp-32]
     call runtime_draw_status
+    mov rcx, [rbp-32]
+    call runtime_draw_minimap
 
     cmp dword [dialog_ticks], 0
     jle .end_text
