@@ -19,6 +19,14 @@
 ; +48..63 reserved
 
 ; ------------------------------------------------------------
+; Sprite asset database (BMP in the current native GDI renderer)
+; ------------------------------------------------------------
+%define MAX_SPRITES         64
+%define SPRITE_SIZE         160
+; +00 char name[32]
+; +32 char path[128]
+
+; ------------------------------------------------------------
 ; Animation database
 ; ------------------------------------------------------------
 %define MAX_ANIMATIONS      64
@@ -34,7 +42,7 @@
 ; +56 hit_width
 ; +60 hit_height
 ; +64 loop
-; +68 reserved
+; +68 sprite_id (-1 = placeholder/no image)
 
 ; ------------------------------------------------------------
 ; Skill database
@@ -170,7 +178,7 @@
 ; +16 quest_count
 ; +20 variable_count
 ; +24 event_count
-; +28 reserved
+; +28 sprite_count
 
 ; ------------------------------------------------------------
 ; Runtime save data
