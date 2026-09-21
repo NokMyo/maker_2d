@@ -54,6 +54,7 @@ extern CloseHandle
 extern CreateProcessA
 extern lstrcpyA
 extern lstrcpynA
+extern lstrlenA
 extern GetOpenFileNameA
 extern wsprintfA
 extern CreateDirectoryA
@@ -70,6 +71,7 @@ extern CopyFileA
 %define WM_PAINT            0x000F
 %define WM_ERASEBKGND       0x0014
 %define WM_KEYDOWN          0x0100
+%define WM_CHAR             0x0102
 %define WM_MOUSEMOVE        0x0200
 %define WM_LBUTTONDOWN      0x0201
 %define WM_LBUTTONUP        0x0202
@@ -367,6 +369,8 @@ WndProc:
     je .erase
     cmp edx, WM_KEYDOWN
     je .keydown
+    cmp edx, WM_CHAR
+    je .char_input
     cmp edx, WM_LBUTTONDOWN
     je .mouse_down
     cmp edx, WM_MOUSEMOVE
@@ -396,6 +400,13 @@ WndProc:
     call PostQuitMessage
     xor eax, eax
     jmp .return
+
+.char_input:
+    mov ecx, dword [rbp-24]
+    call system_char_input
+    test eax, eax
+    jnz .invalidate
+    jmp .default
 
 .keydown:
     mov eax, dword [rbp-24]
