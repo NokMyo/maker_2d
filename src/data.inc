@@ -132,6 +132,34 @@
 ; +36 flags
 
 ; ------------------------------------------------------------
+; Event database / command interpreter
+; ------------------------------------------------------------
+%define MAX_EVENTS          64
+%define EVENT_COMMANDS      8
+%define EVENT_COMMAND_SIZE  16
+%define EVENT_SIZE          176
+
+%define EVENT_DIALOGUE      1
+%define EVENT_SET_VAR       2
+%define EVENT_ADD_ITEM      3
+%define EVENT_ADD_MONEY     4
+%define EVENT_CHANGE_MAP    5
+%define EVENT_START_QUEST   6
+%define EVENT_SET_FLAG      7
+
+; event:
+; +00 char name[32]
+; +32 command_count
+; +36..47 reserved
+; +48 commands[8]
+;
+; command:
+; +00 opcode
+; +04 a
+; +08 b
+; +12 c
+;
+; ------------------------------------------------------------
 ; Database header appended to TSRP project data
 ; ------------------------------------------------------------
 %define DATABASE_HEADER_SIZE 32
@@ -141,7 +169,7 @@
 ; +12 item_count
 ; +16 quest_count
 ; +20 variable_count
-; +24 reserved
+; +24 event_count
 ; +28 reserved
 
 ; ------------------------------------------------------------
