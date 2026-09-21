@@ -39,6 +39,7 @@ extern CreateCompatibleDC
 extern DeleteDC
 extern GetObjectA
 extern BitBlt
+extern StretchBlt
 extern FillRect
 extern DeleteObject
 extern CreatePen
