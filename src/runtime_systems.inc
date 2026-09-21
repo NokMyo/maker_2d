@@ -6,8 +6,12 @@ section .data
     ts_hud_fmt1           db "HP %d/%d   MP %d/%d",0
     ts_hud_fmt2           db "LV %d   EXP %d   Money %d",0
     ts_hud_fmt3           db "Quest %d/%d   Potion %d",0
-    ts_save_msg           db "F2 Save   F3 Load   C Potion",0
+    ts_save_msg           db "F2 Save  F3 Load  C Potion  I/K/J/T panels  V Equip",0
     ts_save_msg_len       equ $-ts_save_msg-1
+    ts_panel_item_fmt     db "Inventory: %s x%d",0
+    ts_panel_skill_fmt    db "Skill: %s  DMG %d  MP %d",0
+    ts_panel_quest_fmt    db "Quest: %s  state %d  progress %d",0
+    ts_panel_stats_fmt    db "Stats: ATK %d  DEF %d  Weapon %d  Armor %d",0
 
 section .bss
     project_header_v2     resb PROJECT_HEADER_SIZE
@@ -24,6 +28,7 @@ section .bss
     items                 resb MAX_ITEMS*ITEM_SIZE
     quests                resb MAX_QUESTS*QUEST_SIZE
     variables             resb MAX_VARIABLES*VARIABLE_SIZE
+    events                resb MAX_EVENTS*EVENT_SIZE
 
     map_count             resd 1
     active_map            resd 1
@@ -42,6 +47,7 @@ section .bss
     item_count            resd 1
     quest_count           resd 1
     variable_count        resd 1
+    event_count           resd 1
 
     player_mp             resd 1
     player_exp            resd 1
@@ -52,6 +58,12 @@ section .bss
     variable_values       resd MAX_VARIABLES
     inventory_counts      resd MAX_ITEMS
     system_key_cooldown   resd 1
+    climbing              resd 1
+    ui_panel              resd 1
+    equipped_weapon       resd 1
+    equipped_armor        resd 1
+    player_defense        resd 1
+    mp_regen_tick         resd 1
     ts_hud_buffer         resb 160
 
 section .text
@@ -238,6 +250,10 @@ load_project:
     cmp eax, MAX_VARIABLES
     ja .close_fail
     mov [variable_count], eax
+    mov eax, [database_header+24]
+    cmp eax, MAX_EVENTS
+    ja .close_fail
+    mov [event_count], eax
 
     mov eax, [animation_count]
     imul eax, ANIMATION_SIZE
@@ -293,6 +309,15 @@ load_project:
     test eax, eax
     jz .close_fail
 
+    mov eax, [event_count]
+    imul eax, EVENT_SIZE
+    mov rcx, [rbp-16]
+    lea rdx, [events]
+    mov r8d, eax
+    call ts_rt_read_block
+    test eax, eax
+    jz .close_fail
+
     mov rcx, [rbp-16]
     call CloseHandle
     mov eax, 1
@@ -324,6 +349,12 @@ runtime_init_state:
     mov dword [player_level], 1
     mov dword [player_money], 0
     mov dword [system_key_cooldown], 0
+    mov dword [climbing], 0
+    mov dword [ui_panel], 0
+    mov dword [equipped_weapon], -1
+    mov dword [equipped_armor], -1
+    mov dword [player_defense], 0
+    mov dword [mp_regen_tick], 0
 
     ; give a few starter potions when item 0 exists
     cmp dword [item_count], 0
@@ -354,6 +385,18 @@ runtime_update_systems:
     mov rbp, rsp
     sub rsp, 48
 
+    call update_checkpoint
+
+    inc dword [mp_regen_tick]
+    cmp dword [mp_regen_tick], 60
+    jl .cooldown
+    mov dword [mp_regen_tick], 0
+    mov eax, [player_mp]
+    cmp eax, [player_max_mp]
+    jge .cooldown
+    inc dword [player_mp]
+
+.cooldown:
     cmp dword [system_key_cooldown], 0
     jle .keys
     dec dword [system_key_cooldown]
@@ -380,8 +423,49 @@ runtime_update_systems:
     mov ecx, 043h                 ; C
     call GetAsyncKeyState
     test ax, 8000h
-    jz .done
+    jz .inventory_panel
     call use_item0
+    mov dword [system_key_cooldown], 15
+    jmp .done
+
+.inventory_panel:
+    mov ecx, 049h                 ; I
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .skill_panel
+    mov dword [ui_panel], 1
+    mov dword [system_key_cooldown], 15
+    jmp .done
+.skill_panel:
+    mov ecx, 04Bh                 ; K
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .quest_panel
+    mov dword [ui_panel], 2
+    mov dword [system_key_cooldown], 15
+    jmp .done
+.quest_panel:
+    mov ecx, 04Ah                 ; J
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .stats_panel
+    mov dword [ui_panel], 3
+    mov dword [system_key_cooldown], 15
+    jmp .done
+.stats_panel:
+    mov ecx, 054h                 ; T
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .equip
+    mov dword [ui_panel], 4
+    mov dword [system_key_cooldown], 15
+    jmp .done
+.equip:
+    mov ecx, 056h                 ; V
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .done
+    call equip_first_gear
     mov dword [system_key_cooldown], 15
 .done:
     leave
@@ -600,7 +684,10 @@ change_map:
     jae .done
     mov [active_map], ecx
     mov dword [camera_x], 0
+    push rcx
     call initialize_player
+    pop rcx
+    call quest_reach_map
 .done:
     ret
 
@@ -649,7 +736,7 @@ npc_quest_interact:
     cmp ecx, [item_count]
     jae .dialog
     mov edx, [r9+56]
-    add [inventory_counts+rcx*4], edx
+    call add_item
 .dialog:
     mov dword [dialog_ticks], 180
 .done:
@@ -680,8 +767,9 @@ monster_killed:
     jl .quests
     cmp eax, [item_count]
     jae .quests
+    mov ecx, eax
     mov edx, [r8+52]
-    add [inventory_counts+rax*4], edx
+    call add_item
 
 .quests:
     xor eax, eax
@@ -704,6 +792,363 @@ monster_killed:
     jmp .qloop
 .done:
     leave
+    ret
+
+
+; ------------------------------------------------------------
+; Add item and update collect quests.
+; ecx = item id, edx = count
+; ------------------------------------------------------------
+add_item:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 64
+    mov [rbp-4], ecx
+    mov [rbp-8], edx
+
+    cmp ecx, 0
+    jl .done
+    cmp ecx, [item_count]
+    jae .done
+    add [inventory_counts+rcx*4], edx
+
+    xor eax, eax
+.qloop:
+    cmp eax, [quest_count]
+    jae .done
+    cmp dword [quest_state+rax*4], QUEST_ACTIVE
+    jne .next
+    mov edx, eax
+    imul edx, QUEST_SIZE
+    lea r8, [quests+rdx]
+    cmp dword [r8+32], QUEST_COLLECT
+    jne .next
+    mov edx, [r8+36]
+    cmp edx, [rbp-4]
+    jne .next
+    mov edx, [inventory_counts+rdx*4]
+    mov [quest_progress+rax*4], edx
+.next:
+    inc eax
+    jmp .qloop
+.done:
+    leave
+    ret
+
+; ------------------------------------------------------------
+; Reach-map quest progress.
+; ecx = map id
+; ------------------------------------------------------------
+quest_reach_map:
+    xor eax, eax
+.loop:
+    cmp eax, [quest_count]
+    jae .done
+    cmp dword [quest_state+rax*4], QUEST_ACTIVE
+    jne .next
+    mov edx, eax
+    imul edx, QUEST_SIZE
+    lea r8, [quests+rdx]
+    cmp dword [r8+32], QUEST_REACH
+    jne .next
+    cmp dword [r8+36], ecx
+    jne .next
+    mov dword [quest_progress+rax*4], 1
+.next:
+    inc eax
+    jmp .loop
+.done:
+    ret
+
+; ------------------------------------------------------------
+; Event interpreter.
+; ecx = event id
+; ------------------------------------------------------------
+run_event:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 96
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+
+    cmp ecx, 0
+    jl .done
+    cmp ecx, [event_count]
+    jae .done
+
+    mov eax, ecx
+    imul eax, EVENT_SIZE
+    lea r13, [events+rax]
+    mov r12d, [r13+32]
+    cmp r12d, EVENT_COMMANDS
+    jle .count_ok
+    mov r12d, EVENT_COMMANDS
+.count_ok:
+    xor ecx, ecx
+.loop:
+    cmp ecx, r12d
+    jae .done
+    mov eax, ecx
+    imul eax, EVENT_COMMAND_SIZE
+    lea r8, [r13+rax+48]
+    mov eax, [r8+0]
+
+    cmp eax, EVENT_DIALOGUE
+    je .dialogue
+    cmp eax, EVENT_SET_VAR
+    je .set_var
+    cmp eax, EVENT_ADD_ITEM
+    je .add_item
+    cmp eax, EVENT_ADD_MONEY
+    je .add_money
+    cmp eax, EVENT_CHANGE_MAP
+    je .map
+    cmp eax, EVENT_START_QUEST
+    je .quest
+    cmp eax, EVENT_SET_FLAG
+    je .set_var
+    jmp .next
+
+.dialogue:
+    mov dword [dialog_ticks], 180
+    jmp .next
+
+.set_var:
+    mov eax, [r8+4]
+    cmp eax, 0
+    jl .next
+    cmp eax, [variable_count]
+    jae .next
+    mov edx, [r8+8]
+    mov [variable_values+rax*4], edx
+    jmp .next
+
+.add_item:
+    mov eax, [r8+4]
+    mov edx, [r8+8]
+    push rcx
+    mov ecx, eax
+    call add_item
+    pop rcx
+    jmp .next
+
+.add_money:
+    mov eax, [r8+4]
+    add [player_money], eax
+    jmp .next
+
+.map:
+    mov eax, [r8+4]
+    push rcx
+    mov ecx, eax
+    call change_map
+    pop rcx
+    jmp .next
+
+.quest:
+    mov eax, [r8+4]
+    cmp eax, 0
+    jl .next
+    cmp eax, [quest_count]
+    jae .next
+    mov dword [quest_state+rax*4], QUEST_ACTIVE
+
+.next:
+    inc ecx
+    jmp .loop
+
+.done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
+    leave
+    ret
+
+; ------------------------------------------------------------
+; Ladder/rope traversal.
+; eax=1 when climbing physics owns vertical movement.
+; ------------------------------------------------------------
+update_traversal:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 80
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+
+    xor r12d, r12d
+.scan:
+    cmp r12d, [entity_count]
+    jae .not_near
+    mov eax, [active_map]
+    cmp dword [entity_map_ids+r12*4], eax
+    jne .next
+
+    mov eax, r12d
+    imul eax, ENTITY_SIZE
+    lea r13, [entities+rax]
+    mov eax, [r13+0]
+    cmp eax, ENTITY_LADDER
+    je .check
+    cmp eax, ENTITY_ROPE
+    jne .next
+
+.check:
+    mov eax, [player_x]
+    add eax, PLAYER_W/2
+    sub eax, [r13+4]
+    test eax, eax
+    jns .absx
+    neg eax
+.absx:
+    cmp eax, 26
+    jg .next
+
+    mov eax, [player_y]
+    add eax, PLAYER_H/2
+    mov edx, [r13+8]
+    sub edx, PLAYER_H
+    cmp eax, edx
+    jl .next
+    mov ecx, [r13+12]
+    test ecx, ecx
+    jg .length_ok
+    mov ecx, 160
+.length_ok:
+    add ecx, [r13+8]
+    cmp eax, ecx
+    jg .next
+
+    mov ecx, 026h
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .down
+    sub dword [player_y], 4
+    mov dword [climbing], 1
+    jmp .owned
+.down:
+    mov ecx, 028h
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .hold
+    add dword [player_y], 4
+    mov dword [climbing], 1
+    jmp .owned
+.hold:
+    cmp dword [climbing], 0
+    je .next
+.owned:
+    mov dword [player_vy], 0
+    mov dword [player_grounded], 0
+    mov eax, 1
+    jmp .done
+
+.next:
+    inc r12d
+    jmp .scan
+
+.not_near:
+    mov dword [climbing], 0
+    xor eax, eax
+.done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
+    leave
+    ret
+
+; ------------------------------------------------------------
+; Checkpoint touch updates respawn position.
+; ------------------------------------------------------------
+update_checkpoint:
+    xor r10d, r10d
+.loop:
+    cmp r10d, [entity_count]
+    jae .done
+    mov eax, [active_map]
+    cmp dword [entity_map_ids+r10*4], eax
+    jne .next
+    mov eax, r10d
+    imul eax, ENTITY_SIZE
+    lea r11, [entities+rax]
+    cmp dword [r11+0], ENTITY_CHECKPOINT
+    jne .next
+
+    mov eax, [player_x]
+    sub eax, [r11+4]
+    test eax, eax
+    jns .absx
+    neg eax
+.absx:
+    cmp eax, 40
+    jg .next
+    mov eax, [player_y]
+    sub eax, [r11+8]
+    test eax, eax
+    jns .absy
+    neg eax
+.absy:
+    cmp eax, 60
+    jg .next
+    mov eax, [r11+4]
+    mov [spawn_x], eax
+    mov eax, [r11+8]
+    mov [spawn_y], eax
+.next:
+    inc r10d
+    jmp .loop
+.done:
+    ret
+
+; ------------------------------------------------------------
+; Equip first owned weapon/armor.
+; ------------------------------------------------------------
+equip_first_gear:
+    xor r10d, r10d
+.scan:
+    cmp r10d, [item_count]
+    jae .recalc
+    cmp dword [inventory_counts+r10*4], 0
+    jle .next
+    mov eax, r10d
+    imul eax, ITEM_SIZE
+    lea r11, [items+rax]
+    cmp dword [r11+32], ITEM_WEAPON
+    jne .armor
+    mov [equipped_weapon], r10d
+    jmp .next
+.armor:
+    cmp dword [r11+32], ITEM_ARMOR
+    jne .next
+    mov [equipped_armor], r10d
+.next:
+    inc r10d
+    jmp .scan
+
+.recalc:
+    mov dword [player_defense], 0
+    mov eax, [equipped_armor]
+    cmp eax, 0
+    jl .done
+    cmp eax, [item_count]
+    jae .done
+    imul eax, ITEM_SIZE
+    mov eax, [items+rax+52]
+    mov [player_defense], eax
+.done:
+    ret
+
+; ------------------------------------------------------------
+; Effective attack bonus from equipped weapon -> eax
+; ------------------------------------------------------------
+equipment_attack_bonus:
+    mov eax, [equipped_weapon]
+    cmp eax, 0
+    jl .none
+    cmp eax, [item_count]
+    jae .none
+    imul eax, ITEM_SIZE
+    mov eax, [items+rax+48]
+    ret
+.none:
+    xor eax, eax
     ret
 
 ; ------------------------------------------------------------
@@ -783,6 +1228,75 @@ runtime_draw_status:
     mov qword [rsp+32], ts_save_msg_len
     call TextOutA
 
+    mov eax, [ui_panel]
+    cmp eax, 1
+    je .panel_inventory
+    cmp eax, 2
+    je .panel_skill
+    cmp eax, 3
+    je .panel_quest
+    cmp eax, 4
+    je .panel_stats
+    jmp .panel_done
+
+.panel_inventory:
+    cmp dword [item_count], 0
+    jle .panel_done
+    lea rcx, [ts_hud_buffer]
+    lea rdx, [ts_panel_item_fmt]
+    lea r8, [items]
+    mov r9d, [inventory_counts]
+    call wsprintfA
+    jmp .panel_draw
+
+.panel_skill:
+    cmp dword [skill_count], 0
+    jle .panel_done
+    lea rcx, [ts_hud_buffer]
+    lea rdx, [ts_panel_skill_fmt]
+    lea r8, [skills]
+    mov r9d, [skills+32]
+    mov eax, [skills+36]
+    mov [rsp+32], rax
+    call wsprintfA
+    jmp .panel_draw
+
+.panel_quest:
+    cmp dword [quest_count], 0
+    jle .panel_done
+    lea rcx, [ts_hud_buffer]
+    lea rdx, [ts_panel_quest_fmt]
+    lea r8, [quests]
+    mov r9d, [quest_state]
+    mov eax, [quest_progress]
+    mov [rsp+32], rax
+    call wsprintfA
+    jmp .panel_draw
+
+.panel_stats:
+    call equipment_attack_bonus
+    add eax, [player_base_attack]
+    lea rcx, [ts_hud_buffer]
+    lea rdx, [ts_panel_stats_fmt]
+    mov r8d, eax
+    mov r9d, [player_defense]
+    mov eax, [equipped_weapon]
+    mov [rsp+32], rax
+    mov eax, [equipped_armor]
+    mov [rsp+40], rax
+    call wsprintfA
+
+.panel_draw:
+    mov [rbp-8], eax
+    mov rcx, r12
+    mov edx, 16
+    mov r8d, 184
+    lea r9, [ts_hud_buffer]
+    mov eax, [rbp-8]
+    mov [rsp+32], rax
+    call TextOutA
+
+.panel_done:
     mov r12, [rbp-40]
     leave
     ret
