@@ -1,8 +1,10 @@
-bin/
-obj/
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.map
+build/
+dist/
+.DS_Store
 .vs/
 .idea/
-*.user
-*.suo
-.DS_Store
-artifacts/
