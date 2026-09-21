@@ -1326,6 +1326,224 @@ equipment_attack_bonus:
 
 
 ; ------------------------------------------------------------
+; Draw active map background sprite stretched to the client area.
+; rcx = HDC, eax = 1 drawn / 0 fallback
+; ------------------------------------------------------------
+runtime_draw_background:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 128
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+    mov [rbp-56], r14
+
+    mov r12, rcx
+    mov eax, [active_map]
+    imul eax, MAP_SIZE
+    lea r13, [maps+rax]
+    mov eax, [r13+48]
+    cmp eax, 0
+    jl .fail
+    cmp eax, [sprite_count]
+    jae .fail
+
+    imul eax, SPRITE_SIZE
+    lea r13, [sprites+rax]
+    cmp byte [r13+32], 0
+    je .fail
+
+    xor ecx, ecx
+    lea rdx, [r13+32]
+    xor r8d, r8d
+    xor r9d, r9d
+    mov qword [rsp+32], 0
+    mov qword [rsp+40], 02010h
+    call LoadImageA
+    test rax, rax
+    jz .fail
+    mov r14, rax
+
+    mov rcx, rax
+    mov edx, 32
+    lea r8, [ts_bitmap_info]
+    call GetObjectA
+    test eax, eax
+    jz .delete_bitmap
+
+    mov rcx, r12
+    call CreateCompatibleDC
+    test rax, rax
+    jz .delete_bitmap
+    mov [rbp-16], rax
+
+    mov rcx, rax
+    mov rdx, r14
+    call SelectObject
+    mov [rbp-24], rax
+
+    mov rcx, r12
+    xor edx, edx
+    xor r8d, r8d
+    mov r9d, [client_rect+8]
+    mov eax, [client_rect+12]
+    mov [rsp+32], rax
+    mov rax, [rbp-16]
+    mov [rsp+40], rax
+    mov qword [rsp+48], 0
+    mov qword [rsp+56], 0
+    mov eax, [ts_bitmap_info+4]
+    mov [rsp+64], rax
+    mov eax, [ts_bitmap_info+8]
+    mov [rsp+72], rax
+    mov qword [rsp+80], 00CC0020h
+    call StretchBlt
+
+    mov rcx, [rbp-16]
+    mov rdx, [rbp-24]
+    call SelectObject
+    mov rcx, [rbp-16]
+    call DeleteDC
+    mov rcx, r14
+    call DeleteObject
+    mov eax, 1
+    jmp .done
+
+.delete_bitmap:
+    mov rcx, r14
+    call DeleteObject
+.fail:
+    xor eax, eax
+.done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
+    mov r14, [rbp-56]
+    leave
+    ret
+
+; ------------------------------------------------------------
+; Minimal runtime minimap.
+; rcx = HDC
+; ------------------------------------------------------------
+runtime_draw_minimap:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 112
+    mov [rbp-48], r12
+    mov [rbp-56], r13
+    mov r12, rcx
+
+    ; Panel background in top-right.
+    mov eax, [client_rect+8]
+    sub eax, 230
+    mov [temp_rect+0], eax
+    mov dword [temp_rect+4], 16
+    mov eax, [client_rect+8]
+    sub eax, 16
+    mov [temp_rect+8], eax
+    mov dword [temp_rect+12], 136
+    mov ecx, [col_dialog]
+    call CreateSolidBrush
+    mov [rbp-8], rax
+    mov rcx, r12
+    lea rdx, [temp_rect]
+    mov r8, rax
+    call FillRect
+    mov rcx, [rbp-8]
+    call DeleteObject
+
+    mov ecx, PS_SOLID
+    mov edx, 2
+    mov r8d, [col_platform]
+    call CreatePen
+    mov [rbp-8], rax
+    mov rcx, r12
+    mov rdx, rax
+    call SelectObject
+    mov [rbp-16], rax
+
+    xor r13d, r13d
+.platform_loop:
+    cmp r13d, [platform_count]
+    jae .platform_done
+    mov eax, [active_map]
+    cmp dword [platform_map_ids+r13*4], eax
+    jne .platform_next
+
+    mov eax, r13d
+    imul eax, PLATFORM_SIZE
+    lea r10, [platforms+rax]
+
+    mov eax, [r10+0]
+    sar eax, 3
+    mov edx, [client_rect+8]
+    sub edx, 220
+    add edx, eax
+    mov eax, [r10+4]
+    sar eax, 3
+    add eax, 20
+    mov r8d, eax
+    mov rcx, r12
+    xor r9d, r9d
+    call MoveToEx
+
+    mov eax, r13d
+    imul eax, PLATFORM_SIZE
+    lea r10, [platforms+rax]
+    mov eax, [r10+8]
+    sar eax, 3
+    mov edx, [client_rect+8]
+    sub edx, 220
+    add edx, eax
+    mov eax, [r10+12]
+    sar eax, 3
+    add eax, 20
+    mov r8d, eax
+    mov rcx, r12
+    call LineTo
+
+.platform_next:
+    inc r13d
+    jmp .platform_loop
+
+.platform_done:
+    mov rcx, r12
+    mov rdx, [rbp-16]
+    call SelectObject
+    mov rcx, [rbp-8]
+    call DeleteObject
+
+    ; Player dot.
+    mov eax, [player_x]
+    sar eax, 3
+    mov edx, [client_rect+8]
+    sub edx, 220
+    add eax, edx
+    mov [temp_rect+0], eax
+    add eax, 6
+    mov [temp_rect+8], eax
+    mov eax, [player_y]
+    sar eax, 3
+    add eax, 20
+    mov [temp_rect+4], eax
+    add eax, 6
+    mov [temp_rect+12], eax
+
+    mov ecx, [col_player]
+    call CreateSolidBrush
+    mov [rbp-8], rax
+    mov rcx, r12
+    lea rdx, [temp_rect]
+    mov r8, rax
+    call FillRect
+    mov rcx, [rbp-8]
+    call DeleteObject
+
+    mov r12, [rbp-48]
+    mov r13, [rbp-56]
+    leave
+    ret
+
+; ------------------------------------------------------------
 ; Draw one frame from an imported BMP sprite sheet.
 ; rcx=HDC, edx=animation id, r8d=x, r9d=y
 ; eax=1 drawn, 0 fallback
