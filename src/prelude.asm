@@ -84,6 +84,7 @@ extern lstrcpyA
 
 %define VK_CONTROL          0x11
 %define VK_DELETE           0x2E
+%define VK_HOME             0x24
 %define VK_LEFT             0x25
 %define VK_UP               0x26
 %define VK_RIGHT            0x27
@@ -92,6 +93,7 @@ extern lstrcpyA
 %define VK_Q                0x51
 %define VK_P                0x50
 %define VK_S                0x53
+%define VK_N                0x4E
 %define VK_O                0x4F
 %define VK_1                0x31
 %define VK_2                0x32
@@ -154,7 +156,7 @@ section .data
     txt_top_len     equ $-txt_top-1
     txt_test        db "F5  TEST GAME",0
     txt_test_len    equ $-txt_test-1
-    txt_status      db "Pure x86-64 assembly editor | 16 px snap | project.lprj",0
+    txt_status      db "Wheel: pan | Arrows: move selection | Del: delete | 16 px snap",0
     txt_status_len  equ $-txt_status-1
 
     txt_active_select db "Active tool: Select",0
@@ -376,6 +378,8 @@ WndProc:
     je .do_test
     cmp eax, VK_DELETE
     je .do_delete
+    cmp eax, VK_HOME
+    je .camera_home
     cmp eax, VK_LEFT
     je .nudge_left
     cmp eax, VK_RIGHT
@@ -399,6 +403,8 @@ WndProc:
 
     cmp eax, VK_S
     je .maybe_save
+    cmp eax, VK_N
+    je .maybe_new
     cmp eax, VK_O
     je .maybe_load
     jmp .handled
@@ -411,6 +417,15 @@ WndProc:
     call save_project
     jmp .invalidate
 
+.maybe_new:
+    mov ecx, VK_CONTROL
+    call GetKeyState
+    test ax, 8000h
+    jz .handled
+    call init_default_project
+    mov dword [tool_mode], TOOL_PLATFORM
+    jmp .invalidate
+
 .maybe_load:
     mov ecx, VK_CONTROL
     call GetKeyState
@@ -418,6 +433,10 @@ WndProc:
     jz .handled
     call load_project
     mov dword [selected_platform], -1
+    jmp .invalidate
+
+.camera_home:
+    mov dword [editor_camera_x], 0
     jmp .invalidate
 
 .do_test:
@@ -1844,7 +1863,8 @@ load_project:
 launch_runtime:
     push rbp
     mov rbp, rsp
-    sub rsp, 112
+    sub rsp, 128
+    mov [rbp-88], rdi
 
     call save_project
     test eax, eax
@@ -1889,5 +1909,6 @@ launch_runtime:
     call CloseHandle
 
 .done:
+    mov rdi, [rbp-88]
     leave
     ret
