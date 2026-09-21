@@ -23,6 +23,9 @@ section .bss
     project_meta          resb PROJECT_META_SIZE
     database_header       resb DATABASE_HEADER_SIZE
     save_header           resb SAVE_HEADER_SIZE
+    save_staging          resb SAVE_HEADER_SIZE+(MAX_QUESTS*2+MAX_VARIABLES+MAX_ITEMS)*4
+    initial_max_hp        resd 1
+    initial_base_attack   resd 1
 
     platform_map_ids      resd MAX_PLATFORMS
     entity_map_ids        resd MAX_ENTITIES
@@ -93,9 +96,17 @@ ts_rt_read_block:
     push rbp
     mov rbp, rsp
     sub rsp, 48
+    mov [rbp-4], r8d
     lea r9, [io_bytes]
     mov qword [rsp+32], 0
     call ReadFile
+    test eax, eax
+    jz .done
+    mov eax, [rbp-4]
+    cmp [io_bytes], eax
+    sete al
+    movzx eax, al
+.done:
     leave
     ret
 
@@ -103,9 +114,17 @@ ts_rt_write_block:
     push rbp
     mov rbp, rsp
     sub rsp, 48
+    mov [rbp-4], r8d
     lea r9, [io_bytes]
     mov qword [rsp+32], 0
     call WriteFile
+    test eax, eax
+    jz .done
+    mov eax, [rbp-4]
+    cmp [io_bytes], eax
+    sete al
+    movzx eax, al
+.done:
     leave
     ret
 
@@ -381,6 +400,9 @@ load_project:
     test eax, eax
     jz .close_fail
 
+    call validate_project_data
+    test eax, eax
+    jz .close_fail
     mov rcx, [rbp-16]
     call CloseHandle
     mov eax, 1
@@ -461,7 +483,10 @@ runtime_init_state:
     mov [rbp-40], r12
 
     mov eax, [player_max_hp]
+    mov [initial_max_hp], eax
     mov [player_hp], eax
+    mov eax, [player_base_attack]
+    mov [initial_base_attack], eax
     mov eax, [player_max_mp]
     mov [player_mp], eax
     mov dword [player_exp], 0
@@ -506,6 +531,9 @@ runtime_init_state:
 ; Audio subsystem. BGM uses MCI so short SE can use PlaySound.
 ; ------------------------------------------------------------
 runtime_start_audio:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
     cmp dword [project_meta+108], 0
     je .done
     lea rcx, [bgm_open_cmd]
@@ -519,9 +547,13 @@ runtime_start_audio:
     xor r9d, r9d
     call mciSendStringA
 .done:
+    leave
     ret
 
 runtime_stop_audio:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
     cmp dword [project_meta+108], 0
     je .done
     lea rcx, [bgm_close_cmd]
@@ -530,9 +562,13 @@ runtime_stop_audio:
     xor r9d, r9d
     call mciSendStringA
 .done:
+    leave
     ret
 
 runtime_play_se:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
     cmp dword [project_meta+108], 0
     je .done
     lea rcx, [se_path]
@@ -540,6 +576,7 @@ runtime_play_se:
     mov r8d, 020003h
     call PlaySoundA
 .done:
+    leave
     ret
 
 ; ------------------------------------------------------------
@@ -675,7 +712,14 @@ runtime_update_systems:
     ret
 
 use_item0:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
     cmp dword [item_count], 0
+    jle .done
+    cmp dword [items+32], ITEM_CONSUMABLE
+    jne .done
+    cmp dword [items+36], 0
     jle .done
     cmp dword [inventory_counts], 0
     jle .done
@@ -692,6 +736,7 @@ use_item0:
     jle .done
     mov [player_hp], eax
 .done:
+    leave
     ret
 
 ; ------------------------------------------------------------
@@ -830,98 +875,157 @@ load_game:
     mov [rbp-8], rax
 
     mov rcx, rax
-    lea rdx, [save_header]
-    mov r8d, SAVE_HEADER_SIZE
+    lea rdx, [save_staging]
+    mov r8d, SAVE_HEADER_SIZE+(MAX_QUESTS*2+MAX_VARIABLES+MAX_ITEMS)*4
     call ts_rt_read_block
-    test eax, eax
-    jz .close_fail
-
-    mov rax, SAVE_MAGIC_QWORD
-    cmp qword [save_header], rax
-    jne .close_fail
-    cmp dword [save_header+8], SAVE_VERSION
-    jne .close_fail
-
-    mov rcx, [rbp-8]
-    lea rdx, [quest_state]
-    mov r8d, MAX_QUESTS*4
-    call ts_rt_read_block
-    test eax, eax
-    jz .close_fail
-    mov rcx, [rbp-8]
-    lea rdx, [quest_progress]
-    mov r8d, MAX_QUESTS*4
-    call ts_rt_read_block
-    test eax, eax
-    jz .close_fail
-    mov rcx, [rbp-8]
-    lea rdx, [variable_values]
-    mov r8d, MAX_VARIABLES*4
-    call ts_rt_read_block
-    test eax, eax
-    jz .close_fail
-    mov rcx, [rbp-8]
-    lea rdx, [inventory_counts]
-    mov r8d, MAX_ITEMS*4
-    call ts_rt_read_block
-    test eax, eax
-    jz .close_fail
-
+    mov [rbp-12], eax
     mov rcx, [rbp-8]
     call CloseHandle
+    cmp dword [rbp-12], 0
+    je .fail
 
-    mov eax, [save_header+12]
-    cmp eax, 0
-    jl .bad_loaded_state
+    mov rax, SAVE_MAGIC_QWORD
+    cmp [save_staging], rax
+    jne .fail
+    cmp dword [save_staging+8], SAVE_VERSION
+    jne .fail
+    mov eax, [save_staging+12]
     cmp eax, [map_count]
-    jae .bad_loaded_state
+    jae .fail
+    mov eax, [save_staging+44]
+    cmp eax, [quest_count]
+    jne .fail
+    mov eax, [save_staging+48]
+    cmp eax, [variable_count]
+    jne .fail
+    mov eax, [save_staging+52]
+    cmp eax, [item_count]
+    jne .fail
+    cmp dword [save_staging+36], 1
+    jl .fail
+    cmp dword [save_staging+36], 10000
+    jg .fail
+    cmp dword [save_staging+24], 1
+    jl .fail
+    cmp dword [save_staging+28], 0
+    jl .fail
+    mov eax, [save_staging+28]
+    cmp eax, [player_max_mp]
+    jg .fail
+    cmp dword [save_staging+32], 0
+    jl .fail
+    cmp dword [save_staging+40], 0
+    jl .fail
+
+    xor r10d, r10d
+.quest_check:
+    cmp r10d, MAX_QUESTS
+    jae .inventory_start
+    cmp dword [save_staging+SAVE_HEADER_SIZE+r10*4], QUEST_REWARDED
+    ja .fail
+    cmp dword [save_staging+SAVE_HEADER_SIZE+MAX_QUESTS*4+r10*4], 0
+    jl .fail
+    inc r10d
+    jmp .quest_check
+.inventory_start:
+    xor r10d, r10d
+.inventory_check:
+    cmp r10d, MAX_ITEMS
+    jae .gear
+    cmp dword [save_staging+SAVE_HEADER_SIZE+(MAX_QUESTS*2+MAX_VARIABLES)*4+r10*4], 0
+    jl .fail
+    inc r10d
+    jmp .inventory_check
+.gear:
+    mov eax, [save_staging+56]
+    mov edx, ITEM_WEAPON
+    call .validate_gear
+    test eax, eax
+    jz .fail
+    mov eax, [save_staging+60]
+    mov edx, ITEM_ARMOR
+    call .validate_gear
+    test eax, eax
+    jz .fail
+
+    ; All validation precedes mutation. Reconstruct level growth from baseline.
+    mov eax, [save_staging+36]
+    dec eax
+    mov ecx, eax
+    add ecx, [initial_base_attack]
+    jo .fail
+    imul eax, 10
+    add eax, [initial_max_hp]
+    jo .fail
+    mov [player_max_hp], eax
+    mov [player_base_attack], ecx
+    mov eax, [save_staging+12]
     mov [active_map], eax
-    mov eax, [save_header+16]
+    call initialize_player
+    xor r10d, r10d
+.copy:
+    mov eax, [save_staging+SAVE_HEADER_SIZE+r10*4]
+    mov [quest_state+r10*4], eax
+    inc r10d
+    cmp r10d, MAX_QUESTS*2+MAX_VARIABLES+MAX_ITEMS
+    jb .copy
+    mov eax, [save_staging+16]
     mov [player_x], eax
-    mov eax, [save_header+20]
+    mov eax, [save_staging+20]
     mov [player_y], eax
-    mov eax, [save_header+24]
+    mov eax, [save_staging+24]
     mov [player_hp], eax
-    mov eax, [save_header+28]
+    mov eax, [save_staging+28]
     mov [player_mp], eax
-    mov eax, [save_header+32]
+    mov eax, [save_staging+32]
     mov [player_exp], eax
-    mov eax, [save_header+36]
+    mov eax, [save_staging+36]
     mov [player_level], eax
-    mov eax, [save_header+40]
+    mov eax, [save_staging+40]
     mov [player_money], eax
-    mov eax, [save_header+56]
+    mov eax, [save_staging+56]
     mov [equipped_weapon], eax
-    mov eax, [save_header+60]
+    mov eax, [save_staging+60]
     mov [equipped_armor], eax
     call equip_recalculate
-    mov dword [player_vx], 0
-    mov dword [player_vy], 0
+    call get_effective_max_hp
+    cmp [player_hp], eax
+    jle .hp_ok
+    mov [player_hp], eax
+.hp_ok:
     mov dword [camera_x], 0
+    mov dword [player_grounded], 0
+    mov dword [attack_ticks], 0
+    mov dword [attack_cooldown], 0
+    mov dword [choice_active], 0
+    mov dword [climbing], 0
+    mov qword [dialog_text_ptr], 0
     mov eax, 1
     leave
     ret
-
-.bad_loaded_state:
-    mov eax, [start_map]
-    mov [active_map], eax
-    call initialize_player
-    xor eax, eax
-    leave
-    ret
-
-.close_fail:
-    mov rcx, [rbp-8]
-    call CloseHandle
 .fail:
     xor eax, eax
     leave
     ret
 
-; ------------------------------------------------------------
-; Map change.
-; ecx = target map id
-; ------------------------------------------------------------
+; Leaf validation against staged inventory, before modifying live equipment.
+.validate_gear:
+    cmp eax, -1
+    je .gear_valid
+    cmp eax, [item_count]
+    jae .gear_bad
+    cmp dword [save_staging+SAVE_HEADER_SIZE+(MAX_QUESTS*2+MAX_VARIABLES)*4+rax*4], 0
+    jle .gear_bad
+    imul eax, ITEM_SIZE
+    cmp [items+rax+32], edx
+    jne .gear_bad
+.gear_valid:
+    mov eax, 1
+    ret
+.gear_bad:
+    xor eax, eax
+    ret
+
 change_map:
     push rbp
     mov rbp, rsp
@@ -995,6 +1099,9 @@ npc_quest_interact:
     mov ecx, [r9+44]
     add [player_exp], ecx
     call check_level_up
+    mov eax, [rbp-4]
+    imul eax, QUEST_SIZE
+    lea r9, [quests+rax]
     mov ecx, [r9+48]
     add [player_money], ecx
     mov ecx, [r9+52]
@@ -1030,6 +1137,9 @@ monster_killed:
     mov eax, [r8+44]
     add [player_exp], eax
     call check_level_up
+    mov eax, [rbp-4]
+    imul eax, MONSTER_SIZE
+    lea r8, [monster_defs+rax]
     mov eax, [r8+48]
     cmp eax, 0
     jl .quests
@@ -1148,8 +1258,10 @@ run_event:
     imul eax, EVENT_SIZE
     lea r13, [events+rax]
     mov r12d, [r13+32]
+    test r12d, r12d
+    jle .done
     cmp r12d, EVENT_COMMANDS
-    jle .count_ok
+    jbe .count_ok
     mov r12d, EVENT_COMMANDS
 .count_ok:
     xor ecx, ecx
@@ -1204,10 +1316,10 @@ run_event:
 .add_item:
     mov eax, [r8+4]
     mov edx, [r8+8]
-    push rcx
+    mov [rbp-8], ecx
     mov ecx, eax
     call add_item
-    pop rcx
+    mov ecx, [rbp-8]
     jmp .next
 
 .add_money:
@@ -1217,10 +1329,10 @@ run_event:
 
 .map:
     mov eax, [r8+4]
-    push rcx
+    mov [rbp-8], ecx
     mov ecx, eax
     call change_map
-    pop rcx
+    mov ecx, [rbp-8]
     jmp .next
 
 .quest:
@@ -1241,7 +1353,12 @@ run_event:
     mov edx, [r8+8]
     cmp [variable_values+rax*4], edx
     je .next
-    add ecx, [r8+12]
+    mov eax, [r8+12]
+    test eax, eax
+    js .done
+    cmp eax, EVENT_COMMANDS
+    ja .done
+    add ecx, eax
     jmp .next
 
 .choice:
@@ -1402,6 +1519,9 @@ update_checkpoint:
 ; Equip first owned weapon/armor.
 ; ------------------------------------------------------------
 equip_first_gear:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
     xor r10d, r10d
 .scan:
     cmp r10d, [item_count]
@@ -1425,6 +1545,7 @@ equip_first_gear:
 
 .recalc:
     call equip_recalculate
+    leave
     ret
 
 equip_recalculate:
@@ -1572,7 +1693,7 @@ gdip_open_sprite:
 gdip_draw_fullscreen:
     push rbp
     mov rbp, rsp
-    sub rsp, 144
+    sub rsp, 160
     mov [rbp-40], r12
     mov [rbp-48], r13
     mov r12, rcx
@@ -1643,7 +1764,7 @@ gdip_draw_fullscreen:
 gdip_draw_tiled:
     push rbp
     mov rbp, rsp
-    sub rsp, 160
+    sub rsp, 176
     mov [rbp-40], r12
     mov [rbp-48], r13
     mov [rbp-56], r14
@@ -2013,6 +2134,10 @@ check_level_up:
     sub rsp, 48
 .loop:
     mov eax, [player_level]
+    cmp eax, 1
+    jl .done
+    cmp eax, 10000
+    jge .done
     imul eax, 100
     cmp [player_exp], eax
     jl .done
@@ -2213,3 +2338,6 @@ runtime_draw_status:
     mov r12, [rbp-40]
     leave
     ret
+
+
+%include "validation.inc"

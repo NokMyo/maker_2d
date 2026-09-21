@@ -109,6 +109,9 @@ section .bss
     event_count          resd 1
     sprite_count         resd 1
     class_count          resd 1
+project_state_end:
+    project_core_backup  resb project_core_end-platform_count
+    project_state_backup resb project_state_end-project_header_v2
     ts_ofn               resb 160
     ts_file_buffer       resb 264
     ts_asset_path        resb 160
@@ -148,6 +151,13 @@ init_project_systems:
     push rbp
     mov rbp, rsp
     sub rsp, 64
+    mov [rbp-8], rdi
+    ; Reset all record bytes, including unused fields from the previous project.
+    lea rdi, [project_header_v2]
+    mov ecx, project_state_end-project_header_v2
+    xor eax, eax
+    rep stosb
+    mov rdi, [rbp-8]
 
     mov dword [map_count], 1
     mov dword [active_map], 0
@@ -333,9 +343,17 @@ ts_write_block:
     push rbp
     mov rbp, rsp
     sub rsp, 48
+    mov [rbp-4], r8d
     lea r9, [io_bytes]
     mov qword [rsp+32], 0
     call WriteFile
+    test eax, eax
+    jz .done
+    mov eax, [rbp-4]
+    cmp [io_bytes], eax
+    sete al
+    movzx eax, al
+.done:
     leave
     ret
 
@@ -343,9 +361,17 @@ ts_read_block:
     push rbp
     mov rbp, rsp
     sub rsp, 48
+    mov [rbp-4], r8d
     lea r9, [io_bytes]
     mov qword [rsp+32], 0
     call ReadFile
+    test eax, eax
+    jz .done
+    mov eax, [rbp-4]
+    cmp [io_bytes], eax
+    sete al
+    movzx eax, al
+.done:
     leave
     ret
 
@@ -607,6 +633,15 @@ load_project:
     push rbp
     mov rbp, rsp
     sub rsp, 112
+
+    lea rcx, [platform_count]
+    lea rdx, [project_core_backup]
+    mov r8d, project_core_end-platform_count
+    call ts_copy_bytes
+    lea rcx, [project_header_v2]
+    lea rdx, [project_state_backup]
+    mov r8d, project_state_end-project_header_v2
+    call ts_copy_bytes
 
     lea rcx, [project_path]
     mov edx, GENERIC_READ
@@ -870,8 +905,19 @@ load_project:
     test eax, eax
     jz .close_fail
 
+    call validate_project_data
+    test eax, eax
+    jz .close_fail
     mov rcx, [rbp-16]
     call CloseHandle
+    mov dword [undo_valid], 0
+    mov dword [redo_valid], 0
+    mov dword [editor_panel_mode], 0
+    mov dword [database_index], 0
+    mov dword [property_index], 0
+    mov dword [rename_mode], 0
+    mov dword [dragging], 0
+    mov dword [editor_camera_x], 0
     mov dword [selected_platform], -1
     mov dword [selected_entity], -1
     mov eax, 1
@@ -882,6 +928,14 @@ load_project:
     mov rcx, [rbp-16]
     call CloseHandle
 .fail:
+    lea rcx, [project_core_backup]
+    lea rdx, [platform_count]
+    mov r8d, project_core_end-platform_count
+    call ts_copy_bytes
+    lea rcx, [project_state_backup]
+    lea rdx, [project_header_v2]
+    mov r8d, project_state_end-project_header_v2
+    call ts_copy_bytes
     xor eax, eax
     leave
     ret
@@ -969,6 +1023,14 @@ system_keydown:
     sub rsp, 64
     mov [rbp-4], ecx
 
+    cmp dword [rename_mode], 0
+    je .normal_key
+    cmp ecx, 01Bh
+    jne .handled
+    mov dword [rename_mode], 0
+    mov dword [rename_record_mode], 0
+    jmp .handled
+.normal_key:
     cmp ecx, 070h                 ; F1
     je .project
     cmp ecx, 071h                 ; F2
@@ -1229,7 +1291,7 @@ system_keydown:
 system_char_input:
     push rbp
     mov rbp, rsp
-    sub rsp, 64
+    sub rsp, 80
     mov [rbp-40], r12
     mov [rbp-4], ecx
 
@@ -2444,7 +2506,7 @@ editor_gdip_open_sprite:
 editor_draw_full_canvas:
     push rbp
     mov rbp, rsp
-    sub rsp, 144
+    sub rsp, 160
     mov [rbp-40], r12
     mov [rbp-48], r13
     mov r12, rcx
@@ -2516,7 +2578,7 @@ editor_draw_full_canvas:
 editor_draw_tiled_canvas:
     push rbp
     mov rbp, rsp
-    sub rsp, 160
+    sub rsp, 176
     mov [rbp-40], r12
     mov [rbp-48], r13
     mov [rbp-56], r14
@@ -2654,7 +2716,7 @@ editor_draw_foreground_layer:
 draw_mode_preview:
     push rbp
     mov rbp, rsp
-    sub rsp, 112
+    sub rsp, 128
     mov [rbp-40], r12
     mov [rbp-48], r13
     mov [rbp-56], r14
@@ -2950,8 +3012,10 @@ advanced_panel_click:
     cmp eax, [r8+32]
     jae .not_handled
 
+    mov [rbp-24], r8
     mov ecx, 010h
     call GetKeyState
+    mov r8, [rbp-24]
     test ax, 8000h
     jnz .set_end
     mov eax, [rbp-12]
@@ -3216,7 +3280,7 @@ ts_import_sprite:
     mov dword [ts_ofn+56], 260
     lea rax, [ts_import_title]
     mov [ts_ofn+88], rax
-    mov dword [ts_ofn+96], 01800h
+    mov dword [ts_ofn+96], 01808h ; OFN_NOCHANGEDIR
 
     lea rcx, [ts_ofn]
     call GetOpenFileNameA
@@ -3244,7 +3308,8 @@ ts_import_sprite:
     lea rdx, [ts_asset_path]
     xor r8d, r8d
     call CopyFileA
-
+    test eax, eax
+    jz .done
     mov eax, [rbp-8]
     imul eax, SPRITE_SIZE
     lea rcx, [sprites+rax+32]
@@ -3295,7 +3360,7 @@ ts_import_icon:
     mov dword [ts_ofn+56], 260
     lea rax, [ts_icon_title]
     mov [ts_ofn+88], rax
-    mov dword [ts_ofn+96], 01800h
+    mov dword [ts_ofn+96], 01808h ; OFN_NOCHANGEDIR
     lea rcx, [ts_ofn]
     call GetOpenFileNameA
     test eax, eax
@@ -3307,6 +3372,8 @@ ts_import_icon:
     lea rdx, [ts_icon_asset]
     xor r8d, r8d
     call CopyFileA
+    test eax, eax
+    jz .done
     lea rcx, [project_meta+160]
     lea rdx, [ts_icon_asset]
     call lstrcpyA
@@ -3354,7 +3421,7 @@ ts_import_audio:
     mov [ts_ofn+88], rax
     mov dword [rbp-8], 0
 .dialog:
-    mov dword [ts_ofn+96], 01800h
+    mov dword [ts_ofn+96], 01808h ; OFN_NOCHANGEDIR
     lea rcx, [ts_ofn]
     call GetOpenFileNameA
     test eax, eax
@@ -3370,6 +3437,8 @@ ts_import_audio:
     lea rdx, [ts_bgm_asset]
     xor r8d, r8d
     call CopyFileA
+    test eax, eax
+    jz .done
     mov dword [project_meta+108], 1
     jmp .done
 .copy_se:
@@ -3377,6 +3446,8 @@ ts_import_audio:
     lea rdx, [ts_se_asset]
     xor r8d, r8d
     call CopyFileA
+    test eax, eax
+    jz .done
     mov dword [project_meta+108], 1
 .done:
     mov rdi, [rbp-40]
@@ -3398,6 +3469,8 @@ resolve_runtime_source:
     call GetModuleFileNameA
     test eax, eax
     jz .fail
+    cmp eax, 480
+    jae .fail
     mov ecx, eax
 .scan:
     test ecx, ecx
@@ -3442,6 +3515,10 @@ export_game:
     mov [rbp-48], r13
     mov dword [build_status], -1
 
+    lea rcx, [project_meta+112]
+    call validate_exe_name
+    test eax, eax
+    jz .export_fail
     call save_project
     test eax, eax
     jz .export_fail
@@ -3556,3 +3633,17 @@ launch_built_game:
     xor eax, eax
     leave
     ret
+
+; Source rcx, destination rdx, byte count r8d. Preserves nonvolatile registers.
+ts_copy_bytes:
+    push rsi
+    push rdi
+    mov rsi, rcx
+    mov rdi, rdx
+    mov ecx, r8d
+    rep movsb
+    pop rdi
+    pop rsi
+    ret
+
+%include "validation.inc"
