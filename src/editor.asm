@@ -757,9 +757,12 @@ WndProc:
     cmp r8d, SNAP_SIZE
     jl .invalidate
 
+    mov r9d, [drag_start_y]
+    mov r11d, [drag_cur_y]
     cmp ecx, edx
     jle .ordered
     xchg ecx, edx
+    xchg r9d, r11d
 .ordered:
     mov eax, [platform_count]
     imul eax, PLATFORM_SIZE
@@ -767,10 +770,9 @@ WndProc:
     add r10, rax
 
     mov [r10+0], ecx
-    mov eax, [drag_start_y]
-    mov [r10+4], eax
+    mov [r10+4], r9d
     mov [r10+8], edx
-    mov [r10+12], eax
+    mov [r10+12], r11d
 
     mov eax, [platform_count]
     mov [selected_platform], eax
@@ -1243,7 +1245,7 @@ draw_drag_preview:
     mov edx, [drag_cur_x]
     sub edx, [editor_camera_x]
     add edx, LEFT_PANEL
-    mov r8d, [drag_start_y]
+    mov r8d, [drag_cur_y]
     add r8d, TOP_BAR
     call LineTo
 
@@ -1517,12 +1519,29 @@ find_platform_at:
     cmp r8d, [r11+8]
     jg .next
 
-    mov eax, r9d
-    sub eax, [r11+4]
+    ; interpolate segment Y at cursor X:
+    ; y = y1 + (x-x1)*(y2-y1)/(x2-x1)
+    mov eax, [r11+8]
+    sub eax, [r11+0]
+    test eax, eax
+    jz .next
+    mov ecx, eax
+
+    mov eax, r8d
+    sub eax, [r11+0]
+    mov edx, [r11+12]
+    sub edx, [r11+4]
+    imul eax, edx
+    cdq
+    idiv ecx
+    add eax, [r11+4]
+
+    mov edx, r9d
+    sub edx, eax
     jns .abs_ok
-    neg eax
+    neg edx
 .abs_ok:
-    cmp eax, 8
+    cmp edx, 8
     jle .found
 .next:
     inc r10d
