@@ -13,6 +13,13 @@ section .data
     ts_name_sprite       db "Sprite",0
     ts_import_title      db "Import PNG/BMP Sprite Sheet",0
     ts_bmp_filter        db "Images (*.png;*.bmp)",0,"*.png;*.bmp",0,"All Files",0,"*.*",0,0
+    ts_audio_filter      db "Wave Audio (*.wav)",0,"*.wav",0,"All Files",0,"*.*",0,0
+    ts_audio_title_bgm   db "Import BGM WAV",0
+    ts_audio_title_se    db "Import SE WAV",0
+    ts_bgm_asset        db "Assets\BGM.wav",0
+    ts_se_asset         db "Assets\SE.wav",0
+    ts_build_bgm        db "Build\Assets\BGM.wav",0
+    ts_build_se         db "Build\Assets\SE.wav",0
     ts_assets_dir        db "Assets",0
     ts_build_assets_dir  db "Build\Assets",0
     ts_sprite_path_fmt   db "Assets\Sprite%03d.asset",0
@@ -919,6 +926,8 @@ system_keydown:
     je .build_run
     cmp ecx, 07Ah                 ; F11
     je .control_settings
+    cmp ecx, 07Bh                 ; F12
+    je .import_audio
     cmp ecx, 021h                 ; PgUp
     je .prev_map
     cmp ecx, 022h                 ; PgDn
@@ -970,6 +979,9 @@ system_keydown:
 .control_settings:
     mov dword [editor_panel_mode], 12
     mov dword [property_index], 0
+    jmp .handled
+.import_audio:
+    call ts_import_audio
     jmp .handled
 .database:
     mov eax, [editor_panel_mode]
@@ -2495,6 +2507,75 @@ ts_import_sprite:
     leave
     ret
 
+
+; ------------------------------------------------------------
+; F12 imports BGM.wav. Ctrl+F12 imports SE.wav.
+; ------------------------------------------------------------
+ts_import_audio:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 112
+    mov [rbp-40], rdi
+
+    lea rdi, [ts_ofn]
+    xor eax, eax
+    mov ecx, 20
+    rep stosq
+    lea rdi, [ts_file_buffer]
+    mov ecx, 33
+    rep stosq
+
+    mov dword [ts_ofn+0], 152
+    mov rax, [hwnd_main]
+    mov [ts_ofn+8], rax
+    lea rax, [ts_audio_filter]
+    mov [ts_ofn+24], rax
+    lea rax, [ts_file_buffer]
+    mov [ts_ofn+48], rax
+    mov dword [ts_ofn+56], 260
+
+    mov ecx, 011h
+    call GetKeyState
+    test ax, 8000h
+    jz .bgm_title
+    lea rax, [ts_audio_title_se]
+    mov [ts_ofn+88], rax
+    mov dword [rbp-8], 1
+    jmp .dialog
+.bgm_title:
+    lea rax, [ts_audio_title_bgm]
+    mov [ts_ofn+88], rax
+    mov dword [rbp-8], 0
+.dialog:
+    mov dword [ts_ofn+96], 01800h
+    lea rcx, [ts_ofn]
+    call GetOpenFileNameA
+    test eax, eax
+    jz .done
+
+    lea rcx, [ts_assets_dir]
+    xor edx, edx
+    call CreateDirectoryA
+
+    cmp dword [rbp-8], 0
+    jne .copy_se
+    lea rcx, [ts_file_buffer]
+    lea rdx, [ts_bgm_asset]
+    xor r8d, r8d
+    call CopyFileA
+    mov dword [project_meta+108], 1
+    jmp .done
+.copy_se:
+    lea rcx, [ts_file_buffer]
+    lea rdx, [ts_se_asset]
+    xor r8d, r8d
+    call CopyFileA
+    mov dword [project_meta+108], 1
+.done:
+    mov rdi, [rbp-40]
+    leave
+    ret
+
 ; ------------------------------------------------------------
 ; export_game
 ; Build\Game.exe + Build\project.tsrp
@@ -2555,6 +2636,14 @@ export_game:
     jmp .asset_loop
 
 .export_done:
+    lea rcx, [ts_bgm_asset]
+    lea rdx, [ts_build_bgm]
+    xor r8d, r8d
+    call CopyFileA
+    lea rcx, [ts_se_asset]
+    lea rdx, [ts_build_se]
+    xor r8d, r8d
+    call CopyFileA
     mov eax, 1
     jmp .export_return
 .export_fail:
