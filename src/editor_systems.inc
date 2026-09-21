@@ -40,7 +40,7 @@ section .data
     ts_project_fmt       db "Project: %s",0
     ts_rename_hint       db "F8 Rename project (type, Enter done)",0
     ts_rename_hint_len   equ $-ts_rename_hint-1
-    ts_help1             db "F1 Project  F2 Player  F6 DB cycle",0
+    ts_help1             db "F1 Project  F2 Player  F3 Map  F6 DB",0
     ts_help1_len         equ $-ts_help1-1
     ts_help2             db "TAB field  +/- edit  INS add  F7 sprite BMP",0
     ts_help2_len         equ $-ts_help2-1
@@ -141,6 +141,9 @@ init_project_systems:
     mov dword [maps+32], 001D1A18h
     mov dword [maps+36], 100
     mov dword [maps+40], 430
+    mov dword [maps+44], -1
+    mov dword [maps+48], -1
+    mov dword [maps+52], 0
 
     mov dword [animation_count], 3
     lea rcx, [animations]
@@ -798,6 +801,9 @@ ts_add_map:
     mov dword [r10+32], 001D1A18h
     mov dword [r10+36], 100
     mov dword [r10+40], 430
+    mov dword [r10+44], -1
+    mov dword [r10+48], -1
+    mov dword [r10+52], 0
 
     inc dword [map_count]
     mov dword [editor_camera_x], 0
@@ -850,6 +856,8 @@ system_keydown:
     je .project
     cmp ecx, 071h                 ; F2
     je .player
+    cmp ecx, 072h                 ; F3
+    je .map_settings
     cmp ecx, 075h                 ; F6
     je .database
     cmp ecx, 076h                 ; F7 sprite import
@@ -892,6 +900,10 @@ system_keydown:
     jmp .handled
 .player:
     mov dword [editor_panel_mode], 2
+    mov dword [property_index], 0
+    jmp .handled
+.map_settings:
+    mov dword [editor_panel_mode], 10
     mov dword [property_index], 0
     jmp .handled
 .database:
@@ -1035,6 +1047,8 @@ ts_adjust_setting:
     je .variable
     cmp edx, 9
     je .event
+    cmp edx, 10
+    je .map
     ret
 
 .entity_param:
@@ -1045,6 +1059,50 @@ ts_adjust_setting:
     jae .done
     imul eax, ENTITY_SIZE
     add dword [entities+rax+12], ecx
+    ret
+
+.map:
+    mov eax, [active_map]
+    imul eax, MAP_SIZE
+    lea r8, [maps+rax]
+    mov eax, [property_index]
+    cmp eax, 0
+    je .map_color
+    cmp eax, 1
+    je .map_spawn_x
+    cmp eax, 2
+    je .map_spawn_y
+    cmp eax, 3
+    je .map_music
+    cmp eax, 4
+    je .map_bg_sprite
+    ret
+.map_color:
+    imul eax, ecx, 010101h
+    add [r8+32], eax
+    ret
+.map_spawn_x:
+    imul eax, ecx, 16
+    add [r8+36], eax
+    ret
+.map_spawn_y:
+    imul eax, ecx, 16
+    add [r8+40], eax
+    ret
+.map_music:
+    add [r8+44], ecx
+    ret
+.map_bg_sprite:
+    add [r8+48], ecx
+    cmp dword [r8+48], -1
+    jge .map_bg_upper
+    mov dword [r8+48], -1
+.map_bg_upper:
+    mov eax, [sprite_count]
+    dec eax
+    cmp [r8+48], eax
+    jle .done
+    mov [r8+48], eax
     ret
 
 .project:
@@ -1282,6 +1340,8 @@ ts_get_setting_value:
     je .variable
     cmp edx, 9
     je .event
+    cmp edx, 10
+    je .map
     xor eax, eax
     ret
 .entity_param:
@@ -1296,6 +1356,39 @@ ts_get_setting_value:
 .zero:
     xor eax, eax
     ret
+.map:
+    mov eax, [active_map]
+    imul eax, MAP_SIZE
+    lea r8, [maps+rax]
+    mov eax, [property_index]
+    cmp eax, 0
+    je .map_g_color
+    cmp eax, 1
+    je .map_g_x
+    cmp eax, 2
+    je .map_g_y
+    cmp eax, 3
+    je .map_g_music
+    cmp eax, 4
+    je .map_g_bg
+    xor eax, eax
+    ret
+.map_g_color:
+    mov eax, [r8+32]
+    ret
+.map_g_x:
+    mov eax, [r8+36]
+    ret
+.map_g_y:
+    mov eax, [r8+40]
+    ret
+.map_g_music:
+    mov eax, [r8+44]
+    ret
+.map_g_bg:
+    mov eax, [r8+48]
+    ret
+
 .project:
     cmp dword [property_index], 0
     jne .ph
