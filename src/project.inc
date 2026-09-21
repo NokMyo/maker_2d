@@ -1,4 +1,4 @@
-; Tsuramechoki project format v2
+; Tsuramechoki project format v3
 ; Shared by editor and runtime. 100% NASM source.
 
 %ifndef TSURAMECHOKI_PROJECT_INC
@@ -6,10 +6,10 @@
 
 %include "data.inc"
 
-%define PROJECT_MAGIC_QWORD 0x3230303050525354 ; "TSRP0002" little-endian
-%define PROJECT_VERSION     2
+%define PROJECT_MAGIC_QWORD 0x3330303050525354 ; "TSRP0003" little-endian
+%define PROJECT_VERSION     3
 %define PROJECT_HEADER_SIZE 64
-%define PROJECT_META_SIZE   64
+%define PROJECT_META_SIZE   192
 
 %define MAX_PLATFORMS       1024
 %define PLATFORM_SIZE       16
@@ -47,7 +47,7 @@
 ; +60 dword project_flags
 ;
 ; ------------------------------------------------------------
-; Project metadata — 64 bytes
+; Project metadata — 192 bytes
 ; ------------------------------------------------------------
 ; +00 char project_name[32]
 ; +32 dword start_map
@@ -58,6 +58,20 @@
 ; +52 dword player_air_animation
 ; +56 dword player_hit_animation
 ; +60 dword player_dead_animation
+; +64 dword hud_x
+; +68 dword hud_y
+; +72 dword minimap_enabled
+; +76 dword key_skill_1
+; +80 dword key_interact
+; +84 dword key_item
+; +88 dword key_jump
+; +92 dword key_skill_2
+; +96 dword key_skill_3
+; +100 dword key_skill_4
+; +104 dword window_flags
+; +108 dword audio_enabled
+; +112 char game_exe_name[48]
+; +160 char icon_path[32]
 ;
 ; ------------------------------------------------------------
 ; Serialized data order
