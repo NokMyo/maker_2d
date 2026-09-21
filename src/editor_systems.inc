@@ -41,7 +41,11 @@ section .data
     ts_runtime_src       db "TsuramechokiRuntime.exe",0
     ts_game_dst          db "Build\Game.exe",0
     ts_project_dst       db "Build\project.tsrp",0
-    ts_game_cmd          db "Game.exe",0
+    ts_build_exe_fmt     db "Build\%s",0
+    ts_icon_filter       db "Windows Icon (*.ico)",0,"*.ico",0,"All Files",0,"*.*",0,0
+    ts_icon_title        db "Import Game Icon",0
+    ts_icon_asset        db "Assets\Game.ico",0
+    ts_build_icon        db "Build\Assets\Game.ico",0
     ts_build_cwd         db "Build",0
 
     ts_fmt_map           db "Map %d / %d",0
@@ -51,7 +55,7 @@ section .data
     ts_event_fmt         db "Cmd %d/%d  OP %d  A %d  B %d  C %d",0
     ts_ui_fmt            db "HUD (%d,%d)  Minimap %d",0
     ts_project_fmt       db "Project: %s",0
-    ts_rename_hint       db "F8 Rename project (type, Enter done)",0
+    ts_rename_hint       db "F8 project name / Shift+F8 EXE name / Ctrl+F7 icon",0
     ts_rename_hint_len   equ $-ts_rename_hint-1
     ts_help1             db "F1 Project  F2 Player  F3 Map  F4 UI  F6 DB",0
     ts_help1_len         equ $-ts_help1-1
@@ -103,6 +107,7 @@ section .bss
     ts_file_buffer       resb 264
     ts_asset_path        resb 160
     ts_build_asset_path  resb 192
+    ts_build_exe_path    resb 128
 
     editor_panel_mode    resd 1
     property_index       resd 1
@@ -1006,9 +1011,23 @@ system_keydown:
     mov dword [event_command_index], 0
     jmp .handled
 .import_sprite:
+    mov ecx, 011h
+    call GetKeyState
+    test ax, 8000h
+    jz .sprite_normal
+    call ts_import_icon
+    jmp .handled
+.sprite_normal:
     call ts_import_sprite
     jmp .handled
 .rename:
+    mov ecx, 010h
+    call GetKeyState
+    test ax, 8000h
+    jz .rename_project
+    mov dword [rename_mode], 2
+    jmp .handled
+.rename_project:
     mov dword [rename_mode], 1
     jmp .handled
 .build:
@@ -1117,6 +1136,15 @@ system_char_input:
     cmp dword [rename_mode], 0
     je .ignored
 
+    cmp dword [rename_mode], 2
+    je .exe_target
+    lea r10, [project_meta]
+    mov dword [ts_text_buffer+120], 31
+    jmp .target_ready
+.exe_target:
+    lea r10, [project_meta+112]
+    mov dword [ts_text_buffer+120], 47
+.target_ready:
     cmp ecx, 13
     je .finish
     cmp ecx, 8
@@ -1128,31 +1156,37 @@ system_char_input:
 
     mov [ts_text_buffer], cl
     mov byte [ts_text_buffer+1], 0
-
-    lea rcx, [project_meta]
+    mov rcx, r10
     call lstrlenA
-    cmp eax, 31
+    cmp eax, [ts_text_buffer+120]
     jae .handled
-    lea rdx, [project_meta+rax]
+    lea rdx, [r10+rax]
     mov cl, [ts_text_buffer]
     mov [rdx], cl
     mov byte [rdx+1], 0
     jmp .handled
 
 .backspace:
-    lea rcx, [project_meta]
+    mov rcx, r10
     call lstrlenA
     test eax, eax
     jz .handled
     dec eax
-    mov byte [project_meta+rax], 0
+    mov byte [r10+rax], 0
     jmp .handled
 
 .finish:
-    cmp byte [project_meta], 0
+    cmp byte [r10], 0
     jne .finish_ok
+    cmp dword [rename_mode], 2
+    je .restore_exe
     lea rcx, [project_meta]
     lea rdx, [ts_default_project]
+    call lstrcpyA
+    jmp .finish_ok
+.restore_exe:
+    lea rcx, [project_meta+112]
+    lea rdx, [ts_default_exe]
     call lstrcpyA
 .finish_ok:
     mov dword [rename_mode], 0
@@ -1367,7 +1401,7 @@ ts_adjust_setting:
     ret
 .project_slots:
     cmp dword [property_index], 3
-    jne .done
+    jne .project_window
     add [save_slots], ecx
     cmp dword [save_slots], 1
     jge .slots_upper
@@ -1376,6 +1410,16 @@ ts_adjust_setting:
     cmp dword [save_slots], 3
     jle .done
     mov dword [save_slots], 3
+    ret
+.project_window:
+    cmp dword [property_index], 4
+    jne .project_audio
+    xor dword [project_meta+104], 1
+    ret
+.project_audio:
+    cmp dword [property_index], 5
+    jne .done
+    xor dword [project_meta+108], 1
     ret
 
 .player:
@@ -1699,8 +1743,18 @@ ts_get_setting_value:
     ret
 .pslots:
     cmp dword [property_index], 3
-    jne .pzero
+    jne .pwindow
     mov eax, [save_slots]
+    ret
+.pwindow:
+    cmp dword [property_index], 4
+    jne .paudio
+    mov eax, [project_meta+104]
+    ret
+.paudio:
+    cmp dword [property_index], 5
+    jne .pzero
+    mov eax, [project_meta+108]
     ret
 .pzero:
     xor eax, eax
@@ -2522,6 +2576,51 @@ ts_import_sprite:
 
 
 ; ------------------------------------------------------------
+; Ctrl+F7 imports Assets\Game.ico and stores project icon path.
+; ------------------------------------------------------------
+ts_import_icon:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 112
+    mov [rbp-40], rdi
+    lea rdi, [ts_ofn]
+    xor eax, eax
+    mov ecx, 20
+    rep stosq
+    lea rdi, [ts_file_buffer]
+    mov ecx, 33
+    rep stosq
+    mov dword [ts_ofn+0], 152
+    mov rax, [hwnd_main]
+    mov [ts_ofn+8], rax
+    lea rax, [ts_icon_filter]
+    mov [ts_ofn+24], rax
+    lea rax, [ts_file_buffer]
+    mov [ts_ofn+48], rax
+    mov dword [ts_ofn+56], 260
+    lea rax, [ts_icon_title]
+    mov [ts_ofn+88], rax
+    mov dword [ts_ofn+96], 01800h
+    lea rcx, [ts_ofn]
+    call GetOpenFileNameA
+    test eax, eax
+    jz .done
+    lea rcx, [ts_assets_dir]
+    xor edx, edx
+    call CreateDirectoryA
+    lea rcx, [ts_file_buffer]
+    lea rdx, [ts_icon_asset]
+    xor r8d, r8d
+    call CopyFileA
+    lea rcx, [project_meta+160]
+    lea rdx, [ts_icon_asset]
+    call lstrcpyA
+.done:
+    mov rdi, [rbp-40]
+    leave
+    ret
+
+; ------------------------------------------------------------
 ; F12 imports BGM.wav. Ctrl+F12 imports SE.wav.
 ; ------------------------------------------------------------
 ts_import_audio:
@@ -2608,8 +2707,13 @@ export_game:
     xor edx, edx
     call CreateDirectoryA
 
+    lea rcx, [ts_build_exe_path]
+    lea rdx, [ts_build_exe_fmt]
+    lea r8, [project_meta+112]
+    call wsprintfA
+
     lea rcx, [ts_runtime_src]
-    lea rdx, [ts_game_dst]
+    lea rdx, [ts_build_exe_path]
     xor r8d, r8d
     call CopyFileA
 
@@ -2657,6 +2761,10 @@ export_game:
     lea rdx, [ts_build_se]
     xor r8d, r8d
     call CopyFileA
+    lea rcx, [ts_icon_asset]
+    lea rdx, [ts_build_icon]
+    xor r8d, r8d
+    call CopyFileA
     mov eax, 1
     jmp .export_return
 .export_fail:
@@ -2677,7 +2785,7 @@ launch_built_game:
     mov [rbp-88], rdi
 
     lea rcx, [runtime_cmd]
-    lea rdx, [ts_game_cmd]
+    lea rdx, [project_meta+112]
     call lstrcpyA
 
     lea rdi, [startup_info]
