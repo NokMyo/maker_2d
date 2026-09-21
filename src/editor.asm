@@ -20,6 +20,7 @@ global mainCRTStartup
 
 extern GetModuleHandleA
 extern GetModuleFileNameA
+extern GetEnvironmentVariableA
 extern LoadCursorA
 extern RegisterClassExA
 extern CreateWindowExA
@@ -149,6 +150,7 @@ extern CopyFileA
 section .data
     class_name      db "TsuramechokiEditor",0
     window_title    db "Tsuramechoki - Assembly Side-scrolling RPG Maker",0
+    ci_smoke_env    db "TSURAMECHOKI_CI_SMOKE",0
 
     project_path    db "project.tsrp",0
     runtime_cmd_template db "TsuramechokiRuntime.exe",0
@@ -262,6 +264,7 @@ section .bss
     editor_gdip_graphics resq 1
     editor_gdip_width resd 1
     editor_gdip_height resd 1
+    ci_smoke_buf    resb 8
 
     tool_mode       resd 1
     selected_platform resd 1
@@ -297,6 +300,22 @@ mainCRTStartup:
     call init_default_project
 
 .project_ready:
+    lea rcx, [ci_smoke_env]
+    lea rdx, [ci_smoke_buf]
+    mov r8d, 8
+    call GetEnvironmentVariableA
+    test eax, eax
+    jz .normal_editor_start
+    call export_game
+    test eax, eax
+    jz .smoke_fail
+    xor ecx, ecx
+    call ExitProcess
+.smoke_fail:
+    mov ecx, 2
+    call ExitProcess
+
+.normal_editor_start:
     lea rcx, [editor_gdip_token]
     lea rdx, [editor_gdip_startup]
     xor r8d, r8d
