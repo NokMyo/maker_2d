@@ -1,10 +1,10 @@
-; Leella Prelude project format
+; Tsuramechoki project format
 ; This file is NASM source and is shared by the editor and runtime.
 
-%ifndef LEELLA_PROJECT_INC
-%define LEELLA_PROJECT_INC 1
+%ifndef TSURAMECHOKI_PROJECT_INC
+%define TSURAMECHOKI_PROJECT_INC 1
 
-%define PROJECT_MAGIC_QWORD 0x313030304A52504C ; "LPRJ0001" little-endian
+%define PROJECT_MAGIC_QWORD 0x3130303050525354 ; "TSRP0001" little-endian
 %define PROJECT_VERSION     1
 %define PROJECT_HEADER_SIZE 24
 
@@ -20,7 +20,7 @@
 %define ENTITY_PORTAL       4
 
 ; Header layout:
-; +00 qword magic "LPRJ0001"
+; +00 qword magic "TSRP0001"
 ; +08 dword version
 ; +12 dword platform_count
 ; +16 dword entity_count
