@@ -56,6 +56,7 @@ section .data
     ts_anim_fmt          db "Frames %d  Active %d-%d  Sprite %d",0
     ts_event_fmt         db "Cmd %d/%d  OP %d  A %d  B %d  C %d",0
     ts_ui_fmt            db "HUD (%d,%d)  Minimap %d",0
+    ts_build_fmt         db "Build status %d  (0 idle / 1 built / 2 running)",0
     ts_project_fmt       db "Project: %s",0
     ts_rename_hint       db "F8 project name / Shift+F8 EXE name / Ctrl+F7 icon",0
     ts_rename_hint_len   equ $-ts_rename_hint-1
@@ -119,6 +120,7 @@ section .bss
     database_index       resd 1
     rename_mode          resd 1
     event_command_index  resd 1
+    build_status         resd 1
     undo_valid           resd 1
     redo_valid           resd 1
     undo_platform_count  resd 1
@@ -189,6 +191,7 @@ init_project_systems:
     mov dword [database_index], 0
     mov dword [rename_mode], 0
     mov dword [event_command_index], 0
+    mov dword [build_status], 0
     mov dword [undo_valid], 0
     mov dword [redo_valid], 0
 
@@ -2237,6 +2240,22 @@ system_draw_panel:
     mov qword [rsp+32], ts_rename_hint_len
     call TextOutA
 
+    lea rcx, [ts_text_buffer]
+    lea rdx, [ts_build_fmt]
+    mov r8d, [build_status]
+    call wsprintfA
+    mov [rbp-8], eax
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    add eax, 18
+    mov edx, eax
+    mov rcx, r12
+    mov r8d, 405
+    lea r9, [ts_text_buffer]
+    mov eax, [rbp-8]
+    mov [rsp+32], rax
+    call TextOutA
+
     mov rcx, r12
     call draw_mode_preview
 
@@ -3009,6 +3028,7 @@ export_game:
     sub rsp, 96
     mov [rbp-40], r12
     mov [rbp-48], r13
+    mov dword [build_status], -1
 
     call save_project
     test eax, eax
@@ -3037,6 +3057,8 @@ export_game:
     lea rdx, [ts_project_dst]
     xor r8d, r8d
     call CopyFileA
+    test eax, eax
+    jz .export_fail
 
     lea rcx, [ts_build_assets_dir]
     xor edx, edx
@@ -3063,6 +3085,8 @@ export_game:
     lea rdx, [ts_build_asset_path]
     xor r8d, r8d
     call CopyFileA
+    test eax, eax
+    jz .export_fail
 
 .asset_next:
     inc r12d
@@ -3081,9 +3105,11 @@ export_game:
     lea rdx, [ts_build_icon]
     xor r8d, r8d
     call CopyFileA
+    mov dword [build_status], 1
     mov eax, 1
     jmp .export_return
 .export_fail:
+    mov dword [build_status], -1
     xor eax, eax
 .export_return:
     mov r12, [rbp-40]
@@ -3097,46 +3123,24 @@ export_game:
 launch_built_game:
     push rbp
     mov rbp, rsp
-    sub rsp, 128
-    mov [rbp-88], rdi
+    sub rsp, 64
 
-    lea rcx, [runtime_cmd]
-    lea rdx, [project_meta+112]
-    call lstrcpyA
-
-    lea rdi, [startup_info]
-    xor eax, eax
-    mov ecx, 13
-    rep stosq
-    mov dword [startup_info], 104
-
-    lea rdi, [process_info]
-    xor eax, eax
-    mov ecx, 3
-    rep stosq
-
-    xor ecx, ecx
-    lea rdx, [runtime_cmd]
-    xor r8d, r8d
+    mov rcx, [hwnd_main]
+    xor edx, edx
+    lea r8, [project_meta+112]
     xor r9d, r9d
-    mov qword [rsp+32], 0
-    mov qword [rsp+40], 0
-    mov qword [rsp+48], 0
     lea rax, [ts_build_cwd]
-    mov [rsp+56], rax
-    lea rax, [startup_info]
-    mov [rsp+64], rax
-    lea rax, [process_info]
-    mov [rsp+72], rax
-    call CreateProcessA
-    test eax, eax
-    jz .done
-
-    mov rcx, [process_info+0]
-    call CloseHandle
-    mov rcx, [process_info+8]
-    call CloseHandle
-.done:
-    mov rdi, [rbp-88]
+    mov [rsp+32], rax
+    mov qword [rsp+40], 5
+    call ShellExecuteA
+    cmp rax, 32
+    jle .fail
+    mov dword [build_status], 2
+    mov eax, 1
+    leave
+    ret
+.fail:
+    mov dword [build_status], -2
+    xor eax, eax
     leave
     ret
