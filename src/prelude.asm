@@ -68,6 +68,7 @@ extern lstrcpyA
 %define WM_MOUSEMOVE        0x0200
 %define WM_LBUTTONDOWN      0x0201
 %define WM_LBUTTONUP        0x0202
+%define WM_MOUSEWHEEL       0x020A
 
 %define PS_SOLID            0
 %define TRANSPARENT         1
@@ -83,6 +84,10 @@ extern lstrcpyA
 
 %define VK_CONTROL          0x11
 %define VK_DELETE           0x2E
+%define VK_LEFT             0x25
+%define VK_UP               0x26
+%define VK_RIGHT            0x27
+%define VK_DOWN             0x28
 %define VK_F5               0x74
 %define VK_Q                0x51
 %define VK_P                0x50
@@ -142,6 +147,8 @@ section .data
     txt_none_len    equ $-txt_none-1
     txt_platform_selected db "Selection: platform",0
     txt_platform_selected_len equ $-txt_platform_selected-1
+    txt_entity_selected db "Selection: entity",0
+    txt_entity_selected_len equ $-txt_entity_selected-1
 
     txt_top         db "Ctrl+S Save   Ctrl+O Load",0
     txt_top_len     equ $-txt_top-1
@@ -202,6 +209,8 @@ section .bss
 
     tool_mode       resd 1
     selected_platform resd 1
+    selected_entity resd 1
+    editor_camera_x resd 1
 
     dragging        resd 1
     drag_start_x    resd 1
@@ -221,6 +230,8 @@ mainCRTStartup:
     sub rsp, 192
 
     mov dword [selected_platform], -1
+    mov dword [selected_entity], -1
+    mov dword [editor_camera_x], 0
     mov dword [tool_mode], TOOL_PLATFORM
 
     call load_project
@@ -334,6 +345,8 @@ WndProc:
     je .mouse_move
     cmp edx, WM_LBUTTONUP
     je .mouse_up
+    cmp edx, WM_MOUSEWHEEL
+    je .mouse_wheel
     cmp edx, WM_DESTROY
     je .destroy
 
@@ -363,6 +376,14 @@ WndProc:
     je .do_test
     cmp eax, VK_DELETE
     je .do_delete
+    cmp eax, VK_LEFT
+    je .nudge_left
+    cmp eax, VK_RIGHT
+    je .nudge_right
+    cmp eax, VK_UP
+    je .nudge_up
+    cmp eax, VK_DOWN
+    je .nudge_down
     cmp eax, VK_Q
     je .tool_select
     cmp eax, VK_P
@@ -404,7 +425,28 @@ WndProc:
     jmp .invalidate
 
 .do_delete:
-    call delete_selected_platform
+    call delete_selection
+    jmp .invalidate
+
+.nudge_left:
+    mov ecx, -SNAP_SIZE
+    xor edx, edx
+    call nudge_selection
+    jmp .invalidate
+.nudge_right:
+    mov ecx, SNAP_SIZE
+    xor edx, edx
+    call nudge_selection
+    jmp .invalidate
+.nudge_up:
+    xor ecx, ecx
+    mov edx, -SNAP_SIZE
+    call nudge_selection
+    jmp .invalidate
+.nudge_down:
+    xor ecx, ecx
+    mov edx, SNAP_SIZE
+    call nudge_selection
     jmp .invalidate
 
 .tool_select:
@@ -505,6 +547,7 @@ WndProc:
     ; convert client -> world
     mov ecx, [rbp-80]
     sub ecx, LEFT_PANEL
+    add ecx, [editor_camera_x]
     mov edx, [rbp-84]
     sub edx, TOP_BAR
 
@@ -519,11 +562,26 @@ WndProc:
     mov r8d, eax
     call place_entity
     mov dword [selected_platform], -1
+    mov dword [selected_entity], -1
     jmp .invalidate
 
 .canvas_select:
+    ; Entities get selection priority over platforms.
+    push rcx
+    push rdx
+    call find_entity_at
+    pop rdx
+    pop rcx
+    cmp eax, -1
+    je .select_platform_only
+    mov [selected_entity], eax
+    mov dword [selected_platform], -1
+    jmp .invalidate
+
+.select_platform_only:
     call find_platform_at
     mov [selected_platform], eax
+    mov dword [selected_entity], -1
     jmp .invalidate
 
 .canvas_platform:
@@ -539,6 +597,7 @@ WndProc:
     mov [drag_cur_y], edx
     mov dword [dragging], 1
     mov dword [selected_platform], -1
+    mov dword [selected_entity], -1
 
     mov rcx, [rbp-8]
     call SetCapture
@@ -602,7 +661,26 @@ WndProc:
 
     mov eax, [platform_count]
     mov [selected_platform], eax
+    mov dword [selected_entity], -1
     inc dword [platform_count]
+    jmp .invalidate
+
+.mouse_wheel:
+    ; High word of wParam is signed wheel delta.
+    mov rax, [rbp-24]
+    shr rax, 16
+    movsx eax, ax
+    test eax, eax
+    jg .wheel_left
+
+    add dword [editor_camera_x], 128
+    jmp .invalidate
+
+.wheel_left:
+    sub dword [editor_camera_x], 128
+    cmp dword [editor_camera_x], 0
+    jge .invalidate
+    mov dword [editor_camera_x], 0
 
 .invalidate:
     mov rcx, [rbp-8]
@@ -846,6 +924,7 @@ draw_platforms:
     add r10, rax
 
     mov edx, [r10+0]
+    sub edx, [editor_camera_x]
     add edx, LEFT_PANEL
     mov r8d, [r10+4]
     add r8d, TOP_BAR
@@ -858,6 +937,7 @@ draw_platforms:
     lea r10, [platforms]
     add r10, rax
     mov edx, [r10+8]
+    sub edx, [editor_camera_x]
     add edx, LEFT_PANEL
     mov r8d, [r10+12]
     add r8d, TOP_BAR
@@ -905,6 +985,7 @@ draw_entities:
     jz .next
 
     mov edx, [r10+4]
+    sub edx, [editor_camera_x]
     add edx, LEFT_PANEL
     mov [temp_rect+0], edx
     add edx, 26
@@ -916,6 +997,53 @@ draw_entities:
     add edx, 36
     mov [temp_rect+12], edx
 
+    ; Draw a slightly larger selection marker behind a selected entity.
+    cmp r13d, [selected_entity]
+    jne .entity_color
+
+    mov eax, [temp_rect+0]
+    sub eax, 3
+    mov [temp_rect+0], eax
+    mov eax, [temp_rect+4]
+    sub eax, 3
+    mov [temp_rect+4], eax
+    mov eax, [temp_rect+8]
+    add eax, 3
+    mov [temp_rect+8], eax
+    mov eax, [temp_rect+12]
+    add eax, 3
+    mov [temp_rect+12], eax
+
+    mov ecx, [col_selected]
+    call CreateSolidBrush
+    mov [rbp-8], rax
+    mov rcx, r12
+    lea rdx, [temp_rect]
+    mov r8, rax
+    call FillRect
+    mov rcx, [rbp-8]
+    call DeleteObject
+
+    mov eax, [temp_rect+0]
+    add eax, 3
+    mov [temp_rect+0], eax
+    mov eax, [temp_rect+4]
+    add eax, 3
+    mov [temp_rect+4], eax
+    mov eax, [temp_rect+8]
+    sub eax, 3
+    mov [temp_rect+8], eax
+    mov eax, [temp_rect+12]
+    sub eax, 3
+    mov [temp_rect+12], eax
+
+    mov eax, r13d
+    imul eax, ENTITY_SIZE
+    lea r10, [entities]
+    add r10, rax
+    mov eax, [r10+0]
+
+.entity_color:
     cmp eax, ENTITY_PLAYER
     jne .monster
     mov ecx, [col_player]
@@ -978,6 +1106,7 @@ draw_drag_preview:
 
     mov rcx, r12
     mov edx, [drag_start_x]
+    sub edx, [editor_camera_x]
     add edx, LEFT_PANEL
     mov r8d, [drag_start_y]
     add r8d, TOP_BAR
@@ -986,6 +1115,7 @@ draw_drag_preview:
 
     mov rcx, r12
     mov edx, [drag_cur_x]
+    sub edx, [editor_camera_x]
     add edx, LEFT_PANEL
     mov r8d, [drag_start_y]
     add r8d, TOP_BAR
@@ -1124,10 +1254,16 @@ draw_editor_text:
     mov edx, eax
     mov rcx, r12
     mov r8d, 116
+    cmp dword [selected_entity], -1
+    jne .entity_selection
     cmp dword [selected_platform], -1
     je .none
     lea r9, [txt_platform_selected]
     mov qword [rsp+32], txt_platform_selected_len
+    jmp .selection_text
+.entity_selection:
+    lea r9, [txt_entity_selected]
+    mov qword [rsp+32], txt_entity_selected_len
     jmp .selection_text
 .none:
     lea r9, [txt_none]
@@ -1232,6 +1368,155 @@ find_platform_at:
     ret
 .not_found:
     mov eax, -1
+    ret
+
+
+; ------------------------------------------------------------
+; find_entity_at(ecx=x, edx=y) -> eax=index/-1
+; ------------------------------------------------------------
+find_entity_at:
+    mov r8d, ecx
+    mov r9d, edx
+    xor r10d, r10d
+.loop:
+    cmp r10d, [entity_count]
+    jae .not_found
+
+    mov eax, r10d
+    imul eax, ENTITY_SIZE
+    lea r11, [entities]
+    add r11, rax
+
+    cmp dword [r11+0], ENTITY_NONE
+    je .next
+
+    mov eax, [r11+4]
+    cmp r8d, eax
+    jl .next
+    add eax, 26
+    cmp r8d, eax
+    jg .next
+
+    mov eax, [r11+8]
+    cmp r9d, eax
+    jl .next
+    add eax, 36
+    cmp r9d, eax
+    jg .next
+
+    mov eax, r10d
+    ret
+.next:
+    inc r10d
+    jmp .loop
+.not_found:
+    mov eax, -1
+    ret
+
+
+; ------------------------------------------------------------
+; delete_selection
+; ------------------------------------------------------------
+delete_selection:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 48
+
+    cmp dword [selected_entity], -1
+    je .platform
+
+    mov eax, [selected_entity]
+    cmp eax, 0
+    jl .clear
+    cmp eax, [entity_count]
+    jge .clear
+
+    mov r8d, eax
+.entity_shift:
+    mov r9d, [entity_count]
+    dec r9d
+    cmp r8d, r9d
+    jge .entity_decrement
+
+    mov eax, r8d
+    inc eax
+    imul eax, ENTITY_SIZE
+    lea r10, [entities]
+    add r10, rax
+
+    mov eax, r8d
+    imul eax, ENTITY_SIZE
+    lea r11, [entities]
+    add r11, rax
+
+    mov eax, [r10+0]
+    mov [r11+0], eax
+    mov eax, [r10+4]
+    mov [r11+4], eax
+    mov eax, [r10+8]
+    mov [r11+8], eax
+    mov eax, [r10+12]
+    mov [r11+12], eax
+    inc r8d
+    jmp .entity_shift
+
+.entity_decrement:
+    dec dword [entity_count]
+    jmp .clear
+
+.platform:
+    call delete_selected_platform
+
+.clear:
+    mov dword [selected_entity], -1
+    mov dword [selected_platform], -1
+    leave
+    ret
+
+
+; ------------------------------------------------------------
+; nudge_selection(ecx=dx, edx=dy)
+; ------------------------------------------------------------
+nudge_selection:
+    cmp dword [selected_entity], -1
+    je .platform
+
+    mov eax, [selected_entity]
+    cmp eax, 0
+    jl .done
+    cmp eax, [entity_count]
+    jge .done
+    imul eax, ENTITY_SIZE
+    lea r8, [entities]
+    add r8, rax
+    add [r8+4], ecx
+    add [r8+8], edx
+    cmp dword [r8+4], 0
+    jge .done
+    mov dword [r8+4], 0
+    ret
+
+.platform:
+    mov eax, [selected_platform]
+    cmp eax, 0
+    jl .done
+    cmp eax, [platform_count]
+    jge .done
+    imul eax, PLATFORM_SIZE
+    lea r8, [platforms]
+    add r8, rax
+    add [r8+0], ecx
+    add [r8+8], ecx
+    add [r8+4], edx
+    add [r8+12], edx
+    cmp dword [r8+0], 0
+    jge .done
+    ; keep segment width while clamping to world x=0
+    mov eax, [r8+8]
+    sub eax, [r8+0]
+    mov dword [r8+0], 0
+    mov [r8+8], eax
+.done:
     ret
 
 
@@ -1353,6 +1638,8 @@ init_default_project:
     mov dword [platform_count], 2
     mov dword [entity_count], 2
     mov dword [selected_platform], -1
+    mov dword [selected_entity], -1
+    mov dword [editor_camera_x], 0
 
     mov dword [platforms+0], 32
     mov dword [platforms+4], 500
@@ -1535,6 +1822,7 @@ load_project:
     mov rcx, [rbp-8]
     call CloseHandle
     mov dword [selected_platform], -1
+    mov dword [selected_entity], -1
     mov eax, 1
     leave
     ret
