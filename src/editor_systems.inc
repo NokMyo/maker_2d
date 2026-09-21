@@ -891,19 +891,6 @@ ts_adjust_setting:
     add dword [entities+rax+12], ecx
     ret
 
-.entity_param:
-    mov eax, [selected_entity]
-    cmp eax, 0
-    jl .zero
-    cmp eax, [entity_count]
-    jae .zero
-    imul eax, ENTITY_SIZE
-    mov eax, [entities+rax+12]
-    ret
-.zero:
-    xor eax, eax
-    ret
-
 .project:
     cmp dword [property_index], 0
     jne .project_h
@@ -1072,6 +1059,18 @@ ts_get_setting_value:
     je .variable
     cmp edx, 9
     je .event
+    xor eax, eax
+    ret
+.entity_param:
+    mov eax, [selected_entity]
+    cmp eax, 0
+    jl .zero
+    cmp eax, [entity_count]
+    jae .zero
+    imul eax, ENTITY_SIZE
+    mov eax, [entities+rax+12]
+    ret
+.zero:
     xor eax, eax
     ret
 .project:
