@@ -2,19 +2,23 @@
 ; Included by runtime.asm. 100% x86-64 NASM.
 
 section .data
-    ts_save_path          db "save0.tsav",0
+    ts_save_path0         db "save0.tsav",0
+    ts_save_path1         db "save1.tsav",0
+    ts_save_path2         db "save2.tsav",0
     ts_hud_fmt1           db "HP %d/%d   MP %d/%d",0
     ts_hud_fmt2           db "LV %d   EXP %d   Money %d",0
     ts_hud_fmt3           db "Quest %d/%d   Potion %d",0
-    ts_save_msg           db "F2 Save  F3 Load  C Potion  I/K/J/T panels  V Equip",0
+    ts_save_msg           db "F2 Save  F3 Load  F4 Slot  C Potion  I/K/J/T panels  V Equip",0
     ts_save_msg_len       equ $-ts_save_msg-1
     ts_panel_item_fmt     db "Inventory: %s x%d",0
     ts_panel_skill_fmt    db "Skill: %s  DMG %d  MP %d",0
     ts_panel_quest_fmt    db "Quest: %s  state %d  progress %d",0
     ts_panel_stats_fmt    db "Stats: ATK %d  DEF %d  Weapon %d  Armor %d",0
+    ts_slot_fmt           db "Save slot: %d/%d",0
 
 section .bss
     project_header_v2     resb PROJECT_HEADER_SIZE
+    project_meta          resb PROJECT_META_SIZE
     database_header       resb DATABASE_HEADER_SIZE
     save_header           resb SAVE_HEADER_SIZE
 
@@ -41,6 +45,9 @@ section .bss
     player_max_mp         resd 1
     player_base_attack    resd 1
     project_flags         resd 1
+    start_map             resd 1
+    save_slots            resd 1
+    current_save_slot     resd 1
 
     animation_count       resd 1
     skill_count           resd 1
@@ -127,6 +134,13 @@ load_project:
     cmp dword [project_header_v2+12], PROJECT_HEADER_SIZE
     jne .close_fail
 
+    mov rcx, [rbp-16]
+    lea rdx, [project_meta]
+    mov r8d, PROJECT_META_SIZE
+    call ts_rt_read_block
+    test eax, eax
+    jz .close_fail
+
     mov eax, [project_header_v2+16]
     cmp eax, MAX_PLATFORMS
     ja .close_fail
@@ -144,10 +158,19 @@ load_project:
     ja .close_fail
     mov [map_count], eax
 
-    mov eax, [project_header_v2+28]
+    mov eax, [project_meta+32]
     cmp eax, [map_count]
     jae .close_fail
+    mov [start_map], eax
     mov [active_map], eax
+
+    mov eax, [project_meta+36]
+    cmp eax, 1
+    jl .close_fail
+    cmp eax, 3
+    jg .close_fail
+    mov [save_slots], eax
+    mov dword [current_save_slot], 0
 
     mov eax, [project_header_v2+32]
     mov [screen_width], eax
@@ -366,6 +389,7 @@ runtime_init_state:
     mov dword [player_level], 1
     mov dword [player_money], 0
     mov dword [system_key_cooldown], 0
+    mov dword [current_save_slot], 0
     mov dword [climbing], 0
     mov dword [ui_panel], 0
     mov dword [equipped_weapon], -1
@@ -434,8 +458,21 @@ runtime_update_systems:
     mov ecx, 072h                 ; F3 load
     call GetAsyncKeyState
     test ax, 8000h
-    jz .potion
+    jz .slot
     call load_game
+    mov dword [system_key_cooldown], 20
+    jmp .done
+.slot:
+    mov ecx, 073h                 ; F4 cycle save slot
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .potion
+    inc dword [current_save_slot]
+    mov eax, [current_save_slot]
+    cmp eax, [save_slots]
+    jl .slot_ready
+    mov dword [current_save_slot], 0
+.slot_ready:
     mov dword [system_key_cooldown], 20
     jmp .done
 .potion:
@@ -509,7 +546,25 @@ use_item0:
     ret
 
 ; ------------------------------------------------------------
-; Save slot 0.
+; Active save-slot path -> rax
+; ------------------------------------------------------------
+get_save_path:
+    mov eax, [current_save_slot]
+    cmp eax, 1
+    je .slot1
+    cmp eax, 2
+    je .slot2
+    lea rax, [ts_save_path0]
+    ret
+.slot1:
+    lea rax, [ts_save_path1]
+    ret
+.slot2:
+    lea rax, [ts_save_path2]
+    ret
+
+; ------------------------------------------------------------
+; Save active slot.
 ; ------------------------------------------------------------
 save_game:
     push rbp
@@ -543,7 +598,8 @@ save_game:
     mov [save_header+52], eax
     mov qword [save_header+56], 0
 
-    lea rcx, [ts_save_path]
+    call get_save_path
+    mov rcx, rax
     mov edx, GENERIC_WRITE
     xor r8d, r8d
     xor r9d, r9d
@@ -608,7 +664,8 @@ load_game:
     mov rbp, rsp
     sub rsp, 96
 
-    lea rcx, [ts_save_path]
+    call get_save_path
+    mov rcx, rax
     mov edx, GENERIC_READ
     mov r8d, FILE_SHARE_READ
     xor r9d, r9d
@@ -1394,6 +1451,21 @@ runtime_draw_status:
     mov qword [rsp+32], ts_save_msg_len
     call TextOutA
 
+    lea rcx, [ts_hud_buffer]
+    lea rdx, [ts_slot_fmt]
+    mov r8d, [current_save_slot]
+    inc r8d
+    mov r9d, [save_slots]
+    call wsprintfA
+    mov [rbp-8], eax
+    mov rcx, r12
+    mov edx, 16
+    mov r8d, 178
+    lea r9, [ts_hud_buffer]
+    mov eax, [rbp-8]
+    mov [rsp+32], rax
+    call TextOutA
+
     mov eax, [ui_panel]
     cmp eax, 1
     je .panel_inventory
@@ -1456,7 +1528,7 @@ runtime_draw_status:
     mov [rbp-8], eax
     mov rcx, r12
     mov edx, 16
-    mov r8d, 184
+    mov r8d, 202
     lea r9, [ts_hud_buffer]
     mov eax, [rbp-8]
     mov [rsp+32], rax
