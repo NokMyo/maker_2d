@@ -500,7 +500,23 @@ WndProc:
     cmp eax, [monster_count]
     jae .entity_color_dispatch
     imul eax, MONSTER_SIZE
-    mov edx, [monster_defs+rax+60]
+    lea r10, [monster_defs+rax]
+    mov edx, [r10+60]
+
+    cmp dword [r10+56], AI_BOSS
+    jne .monster_anim_ready
+    mov eax, [r10+32]
+    imul eax, dword [r10+64]
+    cdq
+    mov ecx, 100
+    idiv ecx
+    cmp dword [enemy_hp+r12*4], eax
+    jg .monster_anim_ready
+    mov eax, [r10+76]
+    cmp eax, 0
+    jl .monster_anim_ready
+    mov edx, eax
+.monster_anim_ready:
     mov rcx, [rbp-32]
     mov r8d, [temp_rect+0]
     mov r9d, [temp_rect+4]
@@ -1370,14 +1386,27 @@ update_monsters_and_damage:
     cmp eax, [monster_count]
     jae .ai_resolved
     imul eax, MONSTER_SIZE
-    mov edx, [monster_defs+rax+40]
+    lea r10, [monster_defs+rax]
+    mov edx, [r10+40]
     cmp edx, 1
     jge .speed_ok
     mov edx, 1
 .speed_ok:
     mov [rbp-12], edx
-    mov edx, [monster_defs+rax+56]
+    mov edx, [r10+56]
     mov [rbp-16], edx
+
+    cmp edx, AI_BOSS
+    jne .ai_resolved
+    mov eax, [r10+32]
+    imul eax, dword [r10+64]
+    cdq
+    mov ecx, 100
+    idiv ecx
+    cmp dword [enemy_hp+r12*4], eax
+    jg .ai_resolved
+    mov eax, [r10+68]
+    add [rbp-12], eax
 
 .ai_resolved:
     ; dx = player_x - monster_x
@@ -1409,9 +1438,6 @@ update_monsters_and_damage:
     jg .contact
     cmp ecx, 42
     jl .contact
-    mov eax, [rbp-12]
-    shl eax, 1
-    mov [rbp-12], eax
     jmp .move_toward
 
 .ranged_ai:
@@ -1471,7 +1497,21 @@ update_monsters_and_damage:
     cmp eax, [monster_count]
     jae .contact_damage_default
     imul eax, MONSTER_SIZE
-    mov eax, [monster_defs+rax+36]
+    lea r10, [monster_defs+rax]
+    mov eax, [r10+36]
+    cmp dword [r10+56], AI_BOSS
+    jne .contact_damage_ready
+    mov edx, [r10+32]
+    imul edx, dword [r10+64]
+    mov [rbp-20], eax
+    mov eax, edx
+    cdq
+    mov ecx, 100
+    idiv ecx
+    cmp dword [enemy_hp+r12*4], eax
+    mov eax, [rbp-20]
+    jg .contact_damage_ready
+    add eax, [r10+72]
     jmp .contact_damage_ready
 .contact_damage_default:
     mov eax, 1
