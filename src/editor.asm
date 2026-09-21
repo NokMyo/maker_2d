@@ -53,6 +53,8 @@ extern ReadFile
 extern CloseHandle
 extern CreateProcessA
 extern lstrcpyA
+extern lstrcpynA
+extern GetOpenFileNameA
 extern wsprintfA
 extern CreateDirectoryA
 extern CopyFileA
