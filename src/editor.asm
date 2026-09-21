@@ -54,6 +54,16 @@ extern ReadFile
 extern CloseHandle
 extern CreateProcessA
 extern ShellExecuteA
+extern MultiByteToWideChar
+extern GdiplusStartup
+extern GdiplusShutdown
+extern GdipLoadImageFromFile
+extern GdipDisposeImage
+extern GdipGetImageWidth
+extern GdipGetImageHeight
+extern GdipCreateFromHDC
+extern GdipDeleteGraphics
+extern GdipDrawImageRectRectI
 extern lstrcpyA
 extern lstrcatA
 extern lstrcpynA
@@ -142,6 +152,12 @@ section .data
 
     project_path    db "project.tsrp",0
     runtime_cmd_template db "TsuramechokiRuntime.exe",0
+    editor_gdip_startup:
+        dd 1
+        dd 0
+        dq 0
+        dd 0
+        dd 0
 
     txt_brand       db "TSURAMECHOKI",0
     txt_brand_len   equ $-txt_brand-1
@@ -240,6 +256,12 @@ section .bss
     startup_info    resb 104
     process_info    resb 24
     runtime_cmd     resb 128
+    editor_gdip_token resq 1
+    editor_gdip_wide_path resw 260
+    editor_gdip_image resq 1
+    editor_gdip_graphics resq 1
+    editor_gdip_width resd 1
+    editor_gdip_height resd 1
 
     tool_mode       resd 1
     selected_platform resd 1
@@ -275,6 +297,11 @@ mainCRTStartup:
     call init_default_project
 
 .project_ready:
+    lea rcx, [editor_gdip_token]
+    lea rdx, [editor_gdip_startup]
+    xor r8d, r8d
+    call GdiplusStartup
+
     xor ecx, ecx
     call GetModuleHandleA
     mov [hinstance], rax
@@ -345,6 +372,11 @@ mainCRTStartup:
     jmp .loop
 
 .quit:
+    mov rcx, [editor_gdip_token]
+    test rcx, rcx
+    jz .quit_exit
+    call GdiplusShutdown
+.quit_exit:
     mov ecx, dword [msg_buf+16]
     call ExitProcess
 
@@ -949,9 +981,14 @@ WndProc:
     mov rcx, [rbp-48]
     call DeleteObject
 
+    mov rcx, [rbp-40]
+    call editor_draw_background_layers
+
     call draw_grid
     call draw_platforms
     call draw_entities
+    mov rcx, [rbp-40]
+    call editor_draw_foreground_layer
     call draw_drag_preview
     call draw_editor_text
     mov rcx, [rbp-40]
