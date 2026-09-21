@@ -510,7 +510,7 @@ runtime_update_systems:
     mov dword [system_key_cooldown], 20
     jmp .done
 .potion:
-    mov ecx, 043h                 ; C
+    mov ecx, [project_meta+84]    ; configured item key
     call GetAsyncKeyState
     test ax, 8000h
     jz .inventory_panel
@@ -1449,6 +1449,9 @@ runtime_draw_minimap:
     mov [rbp-56], r13
     mov r12, rcx
 
+    cmp dword [project_meta+72], 0
+    je .disabled
+
     ; Panel background in top-right.
     mov eax, [client_rect+8]
     sub eax, 230
@@ -1555,6 +1558,11 @@ runtime_draw_minimap:
     mov rcx, [rbp-8]
     call DeleteObject
 
+    mov r12, [rbp-48]
+    mov r13, [rbp-56]
+    leave
+    ret
+.disabled:
     mov r12, [rbp-48]
     mov r13, [rbp-56]
     leave
@@ -1762,8 +1770,9 @@ runtime_draw_status:
     call wsprintfA
     mov [rbp-8], eax
     mov rcx, r12
-    mov edx, 16
-    mov r8d, 90
+    mov edx, [project_meta+64]
+    mov r8d, [project_meta+68]
+    add r8d, 24
     lea r9, [ts_hud_buffer]
     mov eax, [rbp-8]
     mov [rsp+32], rax
@@ -1778,8 +1787,9 @@ runtime_draw_status:
     call wsprintfA
     mov [rbp-8], eax
     mov rcx, r12
-    mov edx, 16
-    mov r8d, 112
+    mov edx, [project_meta+64]
+    mov r8d, [project_meta+68]
+    add r8d, 46
     lea r9, [ts_hud_buffer]
     mov eax, [rbp-8]
     mov [rsp+32], rax
@@ -1803,16 +1813,18 @@ runtime_draw_status:
     call wsprintfA
     mov [rbp-8], eax
     mov rcx, r12
-    mov edx, 16
-    mov r8d, 134
+    mov edx, [project_meta+64]
+    mov r8d, [project_meta+68]
+    add r8d, 68
     lea r9, [ts_hud_buffer]
     mov eax, [rbp-8]
     mov [rsp+32], rax
     call TextOutA
 
     mov rcx, r12
-    mov edx, 16
-    mov r8d, 156
+    mov edx, [project_meta+64]
+    mov r8d, [project_meta+68]
+    add r8d, 90
     lea r9, [ts_save_msg]
     mov qword [rsp+32], ts_save_msg_len
     call TextOutA
@@ -1825,8 +1837,9 @@ runtime_draw_status:
     call wsprintfA
     mov [rbp-8], eax
     mov rcx, r12
-    mov edx, 16
-    mov r8d, 178
+    mov edx, [project_meta+64]
+    mov r8d, [project_meta+68]
+    add r8d, 112
     lea r9, [ts_hud_buffer]
     mov eax, [rbp-8]
     mov [rsp+32], rax
@@ -1835,8 +1848,9 @@ runtime_draw_status:
     cmp dword [choice_active], 0
     je .no_choice_hint
     mov rcx, r12
-    mov edx, 16
-    mov r8d, 224
+    mov edx, [project_meta+64]
+    mov r8d, [project_meta+68]
+    add r8d, 158
     lea r9, [ts_choice_hint]
     mov qword [rsp+32], ts_choice_hint_len
     call TextOutA
@@ -1903,8 +1917,9 @@ runtime_draw_status:
 .panel_draw:
     mov [rbp-8], eax
     mov rcx, r12
-    mov edx, 16
-    mov r8d, 202
+    mov edx, [project_meta+64]
+    mov r8d, [project_meta+68]
+    add r8d, 136
     lea r9, [ts_hud_buffer]
     mov eax, [rbp-8]
     mov [rsp+32], rax
