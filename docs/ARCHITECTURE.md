@@ -1,4 +1,4 @@
-# Leella Prelude Architecture
+# Tsuramechoki Architecture
 
 ## Current target
 
@@ -13,9 +13,9 @@
 
 ## Current executable split
 
-### LeellaPrelude.exe
+### Tsuramechoki.exe
 
-Built from `src/prelude.asm`.
+Built from `src/editor.asm`.
 
 Responsibilities:
 
@@ -23,16 +23,16 @@ Responsibilities:
 - platform and entity authoring
 - world-space editing camera
 - selection/manipulation
-- LPRJ serialization
+- TSRP serialization
 - test-run process launch
 
-### LeellaRuntime.exe
+### TsuramechokiRuntime.exe
 
 Built from `src/runtime.asm`.
 
 Responsibilities:
 
-- LPRJ loading
+- TSRP loading
 - input
 - player physics
 - platform collision
@@ -49,7 +49,7 @@ Responsibilities:
 ## Data flow
 
 Editor memory
-→ `project.lprj`
+→ `project.tsrp`
 → Runtime loader
 → playable test map
 
