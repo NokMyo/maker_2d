@@ -53,6 +53,9 @@ extern ReadFile
 extern CloseHandle
 extern CreateProcessA
 extern lstrcpyA
+extern wsprintfA
+extern CreateDirectoryA
+extern CopyFileA
 
 %define CS_HREDRAW          0x0002
 %define CS_VREDRAW          0x0001
@@ -99,6 +102,10 @@ extern lstrcpyA
 %define VK_2                0x32
 %define VK_3                0x33
 %define VK_4                0x34
+%define VK_5                0x35
+%define VK_6                0x36
+%define VK_7                0x37
+%define VK_8                0x38
 
 %define TOOL_SELECT         0
 %define TOOL_PLATFORM       1
@@ -106,6 +113,10 @@ extern lstrcpyA
 %define TOOL_MONSTER        3
 %define TOOL_NPC            4
 %define TOOL_PORTAL         5
+%define TOOL_LADDER         6
+%define TOOL_ROPE           7
+%define TOOL_CHECKPOINT     8
+%define TOOL_DECOR          9
 
 %define LEFT_PANEL          220
 %define RIGHT_PANEL         270
@@ -142,6 +153,14 @@ section .data
     txt_npc_len     equ $-txt_npc-1
     txt_portal      db "[4] Portal",0
     txt_portal_len  equ $-txt_portal-1
+    txt_ladder      db "[5] Ladder",0
+    txt_ladder_len  equ $-txt_ladder-1
+    txt_rope        db "[6] Rope",0
+    txt_rope_len    equ $-txt_rope-1
+    txt_checkpoint  db "[7] Checkpoint",0
+    txt_checkpoint_len equ $-txt_checkpoint-1
+    txt_decor       db "[8] Decor",0
+    txt_decor_len   equ $-txt_decor-1
 
     txt_props       db "PROPERTIES",0
     txt_props_len   equ $-txt_props-1
@@ -236,6 +255,7 @@ mainCRTStartup:
     mov dword [editor_camera_x], 0
     mov dword [tool_mode], TOOL_PLATFORM
 
+    call init_project_systems
     call load_project
     test eax, eax
     jnz .project_ready
@@ -373,6 +393,12 @@ WndProc:
 
 .keydown:
     mov eax, dword [rbp-24]
+    mov [rbp-88], eax
+    mov ecx, eax
+    call system_keydown
+    test eax, eax
+    jnz .invalidate
+    mov eax, [rbp-88]
 
     cmp eax, VK_F5
     je .do_test
@@ -400,6 +426,14 @@ WndProc:
     je .tool_npc
     cmp eax, VK_4
     je .tool_portal
+    cmp eax, VK_5
+    je .tool_ladder
+    cmp eax, VK_6
+    je .tool_rope
+    cmp eax, VK_7
+    je .tool_checkpoint
+    cmp eax, VK_8
+    je .tool_decor
 
     cmp eax, VK_S
     je .maybe_save
@@ -486,6 +520,18 @@ WndProc:
 .tool_portal:
     mov dword [tool_mode], TOOL_PORTAL
     jmp .invalidate
+.tool_ladder:
+    mov dword [tool_mode], TOOL_LADDER
+    jmp .invalidate
+.tool_rope:
+    mov dword [tool_mode], TOOL_ROPE
+    jmp .invalidate
+.tool_checkpoint:
+    mov dword [tool_mode], TOOL_CHECKPOINT
+    jmp .invalidate
+.tool_decor:
+    mov dword [tool_mode], TOOL_DECOR
+    jmp .invalidate
 
 .mouse_down:
     mov rcx, [rbp-8]
@@ -519,6 +565,14 @@ WndProc:
     jl .mouse_tool_npc
     cmp eax, 360
     jl .mouse_tool_portal
+    cmp eax, 388
+    jl .mouse_tool_ladder
+    cmp eax, 416
+    jl .mouse_tool_rope
+    cmp eax, 444
+    jl .mouse_tool_checkpoint
+    cmp eax, 472
+    jl .mouse_tool_decor
     jmp .handled
 
 .mouse_tool_select:
@@ -538,6 +592,18 @@ WndProc:
     jmp .invalidate
 .mouse_tool_portal:
     mov dword [tool_mode], TOOL_PORTAL
+    jmp .invalidate
+.mouse_tool_ladder:
+    mov dword [tool_mode], TOOL_LADDER
+    jmp .invalidate
+.mouse_tool_rope:
+    mov dword [tool_mode], TOOL_ROPE
+    jmp .invalidate
+.mouse_tool_checkpoint:
+    mov dword [tool_mode], TOOL_CHECKPOINT
+    jmp .invalidate
+.mouse_tool_decor:
+    mov dword [tool_mode], TOOL_DECOR
     jmp .invalidate
 
 .check_top:
@@ -682,6 +748,8 @@ WndProc:
     mov eax, [platform_count]
     mov [selected_platform], eax
     mov dword [selected_entity], -1
+    mov edx, [active_map]
+    mov [platform_map_ids+rax*4], edx
     inc dword [platform_count]
     jmp .invalidate
 
@@ -809,6 +877,8 @@ WndProc:
     call draw_entities
     call draw_drag_preview
     call draw_editor_text
+    mov rcx, [rbp-40]
+    call system_draw_panel
 
     mov rcx, [rbp-8]
     lea rdx, [paint_buf]
@@ -924,6 +994,10 @@ draw_platforms:
     cmp r13d, [platform_count]
     jae .done
 
+    mov eax, [active_map]
+    cmp dword [platform_map_ids+r13*4], eax
+    jne .next
+
     mov ecx, PS_SOLID
     mov edx, 5
     mov r8d, [col_platform]
@@ -970,6 +1044,7 @@ draw_platforms:
     mov rcx, [rbp-8]
     call DeleteObject
 
+.next:
     inc r13d
     jmp .loop
 
@@ -994,6 +1069,10 @@ draw_entities:
 .loop:
     cmp r13d, [entity_count]
     jae .done
+
+    mov eax, [active_map]
+    cmp dword [entity_map_ids+r13*4], eax
+    jne .next
 
     mov eax, r13d
     imul eax, ENTITY_SIZE
@@ -1240,6 +1319,34 @@ draw_editor_text:
     mov qword [rsp+32], txt_portal_len
     call TextOutA
 
+    mov rcx, r12
+    mov edx, 28
+    mov r8d, 364
+    lea r9, [txt_ladder]
+    mov qword [rsp+32], txt_ladder_len
+    call TextOutA
+
+    mov rcx, r12
+    mov edx, 28
+    mov r8d, 392
+    lea r9, [txt_rope]
+    mov qword [rsp+32], txt_rope_len
+    call TextOutA
+
+    mov rcx, r12
+    mov edx, 28
+    mov r8d, 420
+    lea r9, [txt_checkpoint]
+    mov qword [rsp+32], txt_checkpoint_len
+    call TextOutA
+
+    mov rcx, r12
+    mov edx, 28
+    mov r8d, 448
+    lea r9, [txt_decor]
+    mov qword [rsp+32], txt_decor_len
+    call TextOutA
+
     ; top controls
     mov rcx, r12
     mov edx, LEFT_PANEL+18
@@ -1362,6 +1469,10 @@ find_platform_at:
     cmp r10d, [platform_count]
     jae .not_found
 
+    mov eax, [active_map]
+    cmp dword [platform_map_ids+r10*4], eax
+    jne .next
+
     mov eax, r10d
     imul eax, PLATFORM_SIZE
     lea r11, [platforms]
@@ -1401,6 +1512,10 @@ find_entity_at:
 .loop:
     cmp r10d, [entity_count]
     jae .not_found
+
+    mov eax, [active_map]
+    cmp dword [entity_map_ids+r10*4], eax
+    jne .next
 
     mov eax, r10d
     imul eax, ENTITY_SIZE
@@ -1477,6 +1592,8 @@ delete_selection:
     mov [r11+8], eax
     mov eax, [r10+12]
     mov [r11+12], eax
+    mov eax, [entity_map_ids+r8*4+4]
+    mov [entity_map_ids+r8*4], eax
     inc r8d
     jmp .entity_shift
 
@@ -1580,6 +1697,8 @@ delete_selected_platform:
     mov [r11+8], eax
     mov eax, [r10+12]
     mov [r11+12], eax
+    mov eax, [platform_map_ids+r8*4+4]
+    mov [platform_map_ids+r8*4], eax
 
     inc r8d
     jmp .shift
@@ -1617,7 +1736,11 @@ place_entity:
     lea r10, [entities]
     add r10, rax
     cmp dword [r10+0], ENTITY_PLAYER
+    jne .find_next_player
+    mov eax, [active_map]
+    cmp dword [entity_map_ids+r9*4], eax
     je .move_player
+.find_next_player:
     inc r9d
     jmp .find_player
 
@@ -1645,6 +1768,9 @@ place_entity:
     mov eax, [rbp-8]
     mov [r10+8], eax
     mov dword [r10+12], 0
+    mov eax, [entity_count]
+    mov edx, [active_map]
+    mov [entity_map_ids+rax*4], edx
     inc dword [entity_count]
 .done:
     leave
@@ -1655,6 +1781,12 @@ place_entity:
 ; init_default_project
 ; ------------------------------------------------------------
 init_default_project:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
+
+    call init_project_systems
+
     mov dword [platform_count], 2
     mov dword [entity_count], 2
     mov dword [selected_platform], -1
@@ -1665,28 +1797,34 @@ init_default_project:
     mov dword [platforms+4], 500
     mov dword [platforms+8], 900
     mov dword [platforms+12], 500
+    mov dword [platform_map_ids+0], 0
 
     mov dword [platforms+16], 340
     mov dword [platforms+20], 380
     mov dword [platforms+24], 620
     mov dword [platforms+28], 380
+    mov dword [platform_map_ids+4], 0
 
     mov dword [entities+0], ENTITY_PLAYER
     mov dword [entities+4], 100
     mov dword [entities+8], 430
     mov dword [entities+12], 0
+    mov dword [entity_map_ids+0], 0
 
     mov dword [entities+16], ENTITY_MONSTER
     mov dword [entities+20], 520
     mov dword [entities+24], 444
     mov dword [entities+28], 0
+    mov dword [entity_map_ids+4], 0
+
+    leave
     ret
 
 
 ; ------------------------------------------------------------
 ; save_project -> eax=1/0
 ; ------------------------------------------------------------
-save_project:
+save_project_legacy:
     push rbp
     mov rbp, rsp
     sub rsp, 80
@@ -1766,7 +1904,7 @@ save_project:
 ; ------------------------------------------------------------
 ; load_project -> eax=1/0
 ; ------------------------------------------------------------
-load_project:
+load_project_legacy:
     push rbp
     mov rbp, rsp
     sub rsp, 80
@@ -1912,3 +2050,6 @@ launch_runtime:
     mov rdi, [rbp-88]
     leave
     ret
+
+
+%include "editor_systems.inc"
