@@ -2760,6 +2760,33 @@ advanced_panel_click:
     ret
 
 .animation:
+    cmp dword [rbp-8], 480
+    jl .timeline_click
+    cmp dword [rbp-8], 620
+    jg .not_handled
+
+    ; Click inside hitbox preview: move attack box offset.
+    mov ecx, [database_index]
+    cmp ecx, [animation_count]
+    jae .not_handled
+    imul ecx, ANIMATION_SIZE
+    lea r8, [animations+rcx]
+
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    add eax, 80
+    mov ecx, [rbp-4]
+    sub ecx, eax
+    shl ecx, 1
+    mov [r8+48], ecx
+
+    mov eax, [rbp-8]
+    sub eax, 490
+    shl eax, 1
+    mov [r8+52], eax
+    jmp .handled
+
+.timeline_click:
     cmp dword [rbp-8], 446
     jl .not_handled
     cmp dword [rbp-8], 462
