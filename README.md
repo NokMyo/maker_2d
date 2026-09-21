@@ -1,8 +1,8 @@
-# 르엘라 프렐류드 (Leella Prelude)
+# 츠라메쵸키 (Tsuramechoki)
 
 **100% 어셈블리어로 만드는 2D 횡스크롤 액션 RPG 제작 도구.**
 
-르엘라 프렐류드는 RPG Maker처럼 코딩을 거의 하지 않고 게임 콘텐츠를 조립하는 전용 제작툴입니다. 목표 장르는 메이플스토리형 플랫폼 RPG와 던전앤파이터형 벨트스크롤 액션 RPG입니다.
+츠라메쵸키는 RPG Maker처럼 코딩을 거의 하지 않고 게임 콘텐츠를 조립하는 전용 제작툴입니다. 목표 장르는 메이플스토리형 플랫폼 RPG와 던전앤파이터형 벨트스크롤 액션 RPG입니다.
 
 ## 절대 원칙
 
@@ -33,7 +33,7 @@
 - Ctrl+O 불러오기
 - F5 테스트 플레이 실행
 - 종료 시 자동 저장
-- `project.lprj` 바이너리 프로젝트 포맷
+- `project.tsrp` 바이너리 프로젝트 포맷
 
 ### 테스트 런타임
 
@@ -93,17 +93,17 @@
 
 Visual Studio Developer Command Prompt에서 저장소 루트를 기준으로:
 
-    nasm -f win64 -Isrc/ src\prelude.asm -o prelude.obj
-    link /entry:mainCRTStartup /subsystem:windows /machine:x64 prelude.obj user32.lib gdi32.lib kernel32.lib /out:LeellaPrelude.exe
+    nasm -f win64 -Isrc/ src\editor.asm -o editor.obj
+    link /entry:mainCRTStartup /subsystem:windows /machine:x64 editor.obj user32.lib gdi32.lib kernel32.lib /out:Tsuramechoki.exe
 
     nasm -f win64 -Isrc/ src\runtime.asm -o runtime.obj
-    link /entry:mainCRTStartup /subsystem:windows /machine:x64 runtime.obj user32.lib gdi32.lib kernel32.lib /out:LeellaRuntime.exe
+    link /entry:mainCRTStartup /subsystem:windows /machine:x64 runtime.obj user32.lib gdi32.lib kernel32.lib /out:TsuramechokiRuntime.exe
 
-`LeellaPrelude.exe`와 `LeellaRuntime.exe`를 같은 폴더에서 실행합니다. F5를 누르면 에디터가 프로젝트를 저장한 뒤 런타임을 실행합니다.
+`Tsuramechoki.exe`와 `TsuramechokiRuntime.exe`를 같은 폴더에서 실행합니다. F5를 누르면 에디터가 프로젝트를 저장한 뒤 런타임을 실행합니다.
 
 ## 소스
 
-- `src/prelude.asm` — 에디터
+- `src/editor.asm` — 에디터
 - `src/runtime.asm` — 테스트 게임 런타임
 - `src/project.inc` — 공용 프로젝트 포맷 정의
 
