@@ -24,6 +24,7 @@
 %define ENTITY_ROPE         6
 %define ENTITY_CHECKPOINT   7
 %define ENTITY_DECOR        8
+%define ENTITY_EVENT        9
 
 ; ------------------------------------------------------------
 ; Project header v2 — 64 bytes
@@ -60,6 +61,7 @@
 ; item[item_count]
 ; quest[quest_count]
 ; variable[variable_count]
+; event[event_count]
 ;
 ; ------------------------------------------------------------
 ; Platform record — 16 bytes
@@ -84,6 +86,7 @@
 ; NPC     -> quest id
 ; portal  -> target map id
 ; ladder/rope -> optional length
+; event trigger -> event database id
 ;
 ; Map ownership is stored in the parallel entity_map_id array.
 
