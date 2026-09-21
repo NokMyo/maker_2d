@@ -37,6 +37,7 @@ section .data
     ts_default_item      db "Potion",0
     ts_default_quest     db "First Hunt",0
     ts_default_var       db "StoryFlag",0
+    ts_default_dialogue  db "Hello from Tsuramechoki.",0
 
     ts_build_dir         db "Build",0
     ts_runtime_src       db "TsuramechokiRuntime.exe",0
@@ -58,7 +59,7 @@ section .data
     ts_ui_fmt            db "HUD (%d,%d)  Minimap %d",0
     ts_build_fmt         db "Build status %d  (0 idle / 1 built / 2 running)",0
     ts_project_fmt       db "Project: %s",0
-    ts_rename_hint       db "F8 project name / Shift+F8 EXE name / Ctrl+F7 icon",0
+    ts_rename_hint       db "F8 rename context / Shift+F8 EXE / Ctrl+F8 event text",0
     ts_rename_hint_len   equ $-ts_rename_hint-1
     ts_help1             db "F1 Project  F2 Player  F3 Map  F4 UI  F6 DB",0
     ts_help1_len         equ $-ts_help1-1
@@ -119,6 +120,7 @@ section .bss
     property_index       resd 1
     database_index       resd 1
     rename_mode          resd 1
+    rename_record_mode   resd 1
     event_command_index  resd 1
     build_status         resd 1
     undo_valid           resd 1
@@ -190,6 +192,7 @@ init_project_systems:
     mov dword [property_index], 0
     mov dword [database_index], 0
     mov dword [rename_mode], 0
+    mov dword [rename_record_mode], 0
     mov dword [event_command_index], 0
     mov dword [build_status], 0
     mov dword [undo_valid], 0
@@ -315,6 +318,9 @@ init_project_systems:
     call lstrcpyA
     mov dword [events+32], 1
     mov dword [events+48], EVENT_DIALOGUE
+    lea rcx, [events+176]
+    lea rdx, [ts_default_dialogue]
+    call lstrcpyA
 
     leave
     ret
@@ -1078,11 +1084,37 @@ system_keydown:
     call ts_import_sprite
     jmp .handled
 .rename:
+    ; Ctrl+F8 in Event mode edits dialogue body.
+    mov ecx, 011h
+    call GetKeyState
+    test ax, 8000h
+    jz .rename_shift
+    cmp dword [editor_panel_mode], 9
+    jne .rename_shift
+    mov dword [rename_mode], 4
+    mov dword [rename_record_mode], 9
+    jmp .handled
+
+.rename_shift:
     mov ecx, 010h
     call GetKeyState
     test ax, 8000h
-    jz .rename_project
+    jz .rename_context
     mov dword [rename_mode], 2
+    jmp .handled
+
+.rename_context:
+    mov eax, [editor_panel_mode]
+    cmp eax, 3
+    jl .rename_project
+    cmp eax, 9
+    jle .rename_db
+    cmp eax, 13
+    je .rename_db
+    jmp .rename_project
+.rename_db:
+    mov [rename_record_mode], eax
+    mov dword [rename_mode], 3
     jmp .handled
 .rename_project:
     mov dword [rename_mode], 1
@@ -1195,18 +1227,111 @@ system_keydown:
 ; eax=1 handled, 0 ignored
 ; ------------------------------------------------------------
 system_char_input:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 64
+    mov [rbp-40], r12
+    mov [rbp-4], ecx
+
     cmp dword [rename_mode], 0
     je .ignored
 
+    cmp dword [rename_mode], 1
+    je .project_target
     cmp dword [rename_mode], 2
     je .exe_target
-    lea r10, [project_meta]
-    mov dword [ts_text_buffer+120], 31
+    cmp dword [rename_mode], 4
+    je .dialogue_target
+
+    ; DB record name target.
+    mov eax, [database_index]
+    mov edx, [rename_record_mode]
+    cmp edx, 3
+    je .db_anim
+    cmp edx, 4
+    je .db_skill
+    cmp edx, 5
+    je .db_monster
+    cmp edx, 6
+    je .db_item
+    cmp edx, 7
+    je .db_quest
+    cmp edx, 8
+    je .db_variable
+    cmp edx, 9
+    je .db_event
+    cmp edx, 13
+    je .db_class
+    jmp .ignored
+.db_anim:
+    cmp eax, [animation_count]
+    jae .ignored
+    imul eax, ANIMATION_SIZE
+    lea r12, [animations+rax]
+    jmp .name_ready
+.db_skill:
+    cmp eax, [skill_count]
+    jae .ignored
+    imul eax, SKILL_SIZE
+    lea r12, [skills+rax]
+    jmp .name_ready
+.db_monster:
+    cmp eax, [monster_count]
+    jae .ignored
+    imul eax, MONSTER_SIZE
+    lea r12, [monster_defs+rax]
+    jmp .name_ready
+.db_item:
+    cmp eax, [item_count]
+    jae .ignored
+    imul eax, ITEM_SIZE
+    lea r12, [items+rax]
+    jmp .name_ready
+.db_quest:
+    cmp eax, [quest_count]
+    jae .ignored
+    imul eax, QUEST_SIZE
+    lea r12, [quests+rax]
+    jmp .name_ready
+.db_variable:
+    cmp eax, [variable_count]
+    jae .ignored
+    imul eax, VARIABLE_SIZE
+    lea r12, [variables+rax]
+    jmp .name_ready
+.db_event:
+    cmp eax, [event_count]
+    jae .ignored
+    imul eax, EVENT_SIZE
+    lea r12, [events+rax]
+    jmp .name_ready
+.db_class:
+    cmp eax, [class_count]
+    jae .ignored
+    imul eax, CLASS_SIZE
+    lea r12, [class_defs+rax]
+.name_ready:
+    mov dword [rbp-8], 31
+    jmp .target_ready
+
+.project_target:
+    lea r12, [project_meta]
+    mov dword [rbp-8], 31
     jmp .target_ready
 .exe_target:
-    lea r10, [project_meta+112]
-    mov dword [ts_text_buffer+120], 47
+    lea r12, [project_meta+112]
+    mov dword [rbp-8], 47
+    jmp .target_ready
+.dialogue_target:
+    mov eax, [database_index]
+    cmp eax, [event_count]
+    jae .ignored
+    imul eax, EVENT_SIZE
+    lea r12, [events+rax+176]
+    mov dword [rbp-8], 127
+
 .target_ready:
+    mov ecx, [rbp-4]
     cmp ecx, 13
     je .finish
     cmp ecx, 8
@@ -1218,30 +1343,34 @@ system_char_input:
 
     mov [ts_text_buffer], cl
     mov byte [ts_text_buffer+1], 0
-    mov rcx, r10
+    mov rcx, r12
     call lstrlenA
-    cmp eax, [ts_text_buffer+120]
+    cmp eax, [rbp-8]
     jae .handled
-    lea rdx, [r10+rax]
+    lea rdx, [r12+rax]
     mov cl, [ts_text_buffer]
     mov [rdx], cl
     mov byte [rdx+1], 0
     jmp .handled
 
 .backspace:
-    mov rcx, r10
+    mov rcx, r12
     call lstrlenA
     test eax, eax
     jz .handled
     dec eax
-    mov byte [r10+rax], 0
+    mov byte [r12+rax], 0
     jmp .handled
 
 .finish:
-    cmp byte [r10], 0
+    cmp byte [r12], 0
     jne .finish_ok
+    cmp dword [rename_mode], 1
+    je .restore_project
     cmp dword [rename_mode], 2
     je .restore_exe
+    jmp .finish_ok
+.restore_project:
     lea rcx, [project_meta]
     lea rdx, [ts_default_project]
     call lstrcpyA
@@ -1252,11 +1381,15 @@ system_char_input:
     call lstrcpyA
 .finish_ok:
     mov dword [rename_mode], 0
+    mov dword [rename_record_mode], 0
 .handled:
     mov eax, 1
-    ret
+    jmp .return
 .ignored:
     xor eax, eax
+.return:
+    mov r12, [rbp-40]
+    leave
     ret
 
 ; ------------------------------------------------------------
@@ -2106,6 +2239,9 @@ ts_add_database_record:
     imul eax, EVENT_SIZE
     mov dword [events+rax+32], 1
     mov dword [events+rax+48], EVENT_DIALOGUE
+    lea rcx, [events+rax+176]
+    lea rdx, [ts_default_dialogue]
+    call lstrcpyA
     inc dword [event_count]
 .done:
     leave
