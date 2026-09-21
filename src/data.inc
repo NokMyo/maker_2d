@@ -130,42 +130,6 @@
 ; +60 flags
 
 ; ------------------------------------------------------------
-; Sprite assets
-; ------------------------------------------------------------
-%define MAX_SPRITES         16
-%define SPRITE_SIZE         96
-; +00 char name[32]
-; +32 char path[64]
-;
-; The first prototype loader supports Windows BMP files.
-; Missing assets fall back to editor/runtime primitive rendering.
-
-; ------------------------------------------------------------
-; Visual event database
-; ------------------------------------------------------------
-%define MAX_EVENTS          64
-%define EVENT_SIZE          96
-
-%define EVENT_NONE          0
-%define EVENT_SHOW_TEXT     1
-%define EVENT_SET_VARIABLE  2
-%define EVENT_ADD_ITEM      3
-%define EVENT_ADD_MONEY     4
-%define EVENT_START_QUEST   5
-%define EVENT_TRANSFER_MAP  6
-
-; +00 char name[32]
-; +32 char text[32]
-; +64 dword command1
-; +68 dword arg1
-; +72 dword command2
-; +76 dword arg2
-; +80 dword command3
-; +84 dword arg3
-; +88 dword flags
-; +92 dword reserved
-
-; ------------------------------------------------------------
 ; Game variables / flags
 ; ------------------------------------------------------------
 %define MAX_VARIABLES       128
