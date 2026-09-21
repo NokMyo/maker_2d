@@ -53,6 +53,7 @@ extern WriteFile
 extern ReadFile
 extern CloseHandle
 extern CreateProcessA
+extern ShellExecuteA
 extern lstrcpyA
 extern lstrcatA
 extern lstrcpynA
