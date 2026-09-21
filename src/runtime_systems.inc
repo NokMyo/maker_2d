@@ -15,6 +15,8 @@ section .data
     ts_panel_quest_fmt    db "Quest: %s  state %d  progress %d",0
     ts_panel_stats_fmt    db "Stats: ATK %d  DEF %d  Weapon %d  Armor %d",0
     ts_slot_fmt           db "Save slot: %d/%d",0
+    ts_choice_hint        db "Choice: [1] option A   [2] option B",0
+    ts_choice_hint_len    equ $-ts_choice_hint-1
 
 section .bss
     project_header_v2     resb PROJECT_HEADER_SIZE
@@ -74,6 +76,10 @@ section .bss
     player_defense        resd 1
     mp_regen_tick         resd 1
     game_tick             resd 1
+    dialog_text_ptr       resq 1
+    choice_active         resd 1
+    choice_event_a        resd 1
+    choice_event_b        resd 1
     ts_bitmap_info        resb 32
     ts_hud_buffer         resb 160
 
@@ -397,6 +403,8 @@ runtime_init_state:
     mov dword [player_defense], 0
     mov dword [mp_regen_tick], 0
     mov dword [game_tick], 0
+    mov qword [dialog_text_ptr], 0
+    mov dword [choice_active], 0
 
     ; give a few starter potions when item 0 exists
     cmp dword [item_count], 0
@@ -444,6 +452,30 @@ runtime_update_systems:
     jle .keys
     dec dword [system_key_cooldown]
 .keys:
+    cmp dword [choice_active], 0
+    je .normal_keys
+
+    mov ecx, 031h
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .choice_two
+    mov ecx, [choice_event_a]
+    mov dword [choice_active], 0
+    call run_event
+    mov dword [system_key_cooldown], 20
+    jmp .done
+.choice_two:
+    mov ecx, 032h
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .done
+    mov ecx, [choice_event_b]
+    mov dword [choice_active], 0
+    call run_event
+    mov dword [system_key_cooldown], 20
+    jmp .done
+
+.normal_keys:
     cmp dword [system_key_cooldown], 0
     jne .done
 
@@ -790,6 +822,11 @@ npc_quest_interact:
     cmp ecx, [quest_count]
     jae .done
 
+    mov eax, ecx
+    imul eax, QUEST_SIZE
+    lea rax, [quests+rax]
+    mov [dialog_text_ptr], rax
+
     lea r8, [quest_state]
     mov eax, [rbp-4]
     cmp dword [r8+rax*4], QUEST_LOCKED
@@ -991,9 +1028,14 @@ run_event:
     je .quest
     cmp eax, EVENT_SET_FLAG
     je .set_var
+    cmp eax, EVENT_IF_VAR_EQ
+    je .if_var_eq
+    cmp eax, EVENT_CHOICE
+    je .choice
     jmp .next
 
 .dialogue:
+    mov [dialog_text_ptr], r13
     mov dword [dialog_ticks], 180
     jmp .next
 
@@ -1036,6 +1078,29 @@ run_event:
     cmp eax, [quest_count]
     jae .next
     mov dword [quest_state+rax*4], QUEST_ACTIVE
+    jmp .next
+
+.if_var_eq:
+    mov eax, [r8+4]
+    cmp eax, 0
+    jl .next
+    cmp eax, [variable_count]
+    jae .next
+    mov edx, [r8+8]
+    cmp [variable_values+rax*4], edx
+    je .next
+    add ecx, [r8+12]
+    jmp .next
+
+.choice:
+    mov eax, [r8+4]
+    mov [choice_event_a], eax
+    mov eax, [r8+8]
+    mov [choice_event_b], eax
+    mov dword [choice_active], 1
+    mov [dialog_text_ptr], r13
+    mov dword [dialog_ticks], 600
+    jmp .done
 
 .next:
     inc ecx
@@ -1465,6 +1530,16 @@ runtime_draw_status:
     mov eax, [rbp-8]
     mov [rsp+32], rax
     call TextOutA
+
+    cmp dword [choice_active], 0
+    je .no_choice_hint
+    mov rcx, r12
+    mov edx, 16
+    mov r8d, 224
+    lea r9, [ts_choice_hint]
+    mov qword [rsp+32], ts_choice_hint_len
+    call TextOutA
+.no_choice_hint:
 
     mov eax, [ui_panel]
     cmp eax, 1
