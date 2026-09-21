@@ -154,6 +154,8 @@
 %define EVENT_CHANGE_MAP    5
 %define EVENT_START_QUEST   6
 %define EVENT_SET_FLAG      7
+%define EVENT_IF_VAR_EQ     8
+%define EVENT_CHOICE        9
 
 ; event:
 ; +00 char name[32]
@@ -166,6 +168,9 @@
 ; +04 a
 ; +08 b
 ; +12 c
+;
+; IF_VAR_EQ: a=variable id, b=value, c=commands to skip when false
+; CHOICE:    a=event id for key 1, b=event id for key 2
 ;
 ; ------------------------------------------------------------
 ; Database header appended to TSRP project data
