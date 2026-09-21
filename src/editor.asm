@@ -19,6 +19,7 @@ default rel
 global mainCRTStartup
 
 extern GetModuleHandleA
+extern GetModuleFileNameA
 extern LoadCursorA
 extern RegisterClassExA
 extern CreateWindowExA
@@ -53,6 +54,7 @@ extern ReadFile
 extern CloseHandle
 extern CreateProcessA
 extern lstrcpyA
+extern lstrcatA
 extern lstrcpynA
 extern lstrlenA
 extern GetOpenFileNameA
