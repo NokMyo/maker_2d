@@ -2116,10 +2116,10 @@ launch_runtime:
     test eax, eax
     jz .done
 
-    ; writable command line copy
-    lea rcx, [runtime_cmd]
-    lea rdx, [runtime_cmd_template]
-    call lstrcpyA
+    call resolve_runtime_source
+    test rax, rax
+    jz .done
+    mov [rbp-96], rax
 
     ; zero STARTUPINFOA + PROCESS_INFORMATION
     lea rdi, [startup_info]
@@ -2133,8 +2133,8 @@ launch_runtime:
     mov ecx, 3
     rep stosq
 
-    xor ecx, ecx
-    lea rdx, [runtime_cmd]
+    mov rcx, [rbp-96]
+    xor edx, edx
     xor r8d, r8d
     xor r9d, r9d
     mov qword [rsp+32], 0
