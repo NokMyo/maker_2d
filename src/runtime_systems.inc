@@ -1182,7 +1182,12 @@ run_event:
     jmp .next
 
 .dialogue:
-    mov [dialog_text_ptr], r13
+    lea rax, [r13+176]
+    cmp byte [rax], 0
+    jne .dialogue_text_ready
+    mov rax, r13
+.dialogue_text_ready:
+    mov [dialog_text_ptr], rax
     mov dword [dialog_ticks], 180
     jmp .next
 
