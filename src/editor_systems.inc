@@ -40,6 +40,7 @@ section .data
 
     ts_build_dir         db "Build",0
     ts_runtime_src       db "TsuramechokiRuntime.exe",0
+    ts_runtime_filename  db "TsuramechokiRuntime.exe",0
     ts_game_dst          db "Build\Game.exe",0
     ts_project_dst       db "Build\project.tsrp",0
     ts_build_exe_fmt     db "Build\%s",0
@@ -111,6 +112,7 @@ section .bss
     ts_asset_path        resb 160
     ts_build_asset_path  resb 192
     ts_build_exe_path    resb 128
+    ts_runtime_full_path resb 520
 
     editor_panel_mode    resd 1
     property_index       resd 1
@@ -2951,6 +2953,53 @@ ts_import_audio:
     ret
 
 ; ------------------------------------------------------------
+; Find TsuramechokiRuntime.exe next to the editor executable.
+; rax = full path, or 0 on failure.
+; ------------------------------------------------------------
+resolve_runtime_source:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 48
+
+    xor ecx, ecx
+    lea rdx, [ts_runtime_full_path]
+    mov r8d, 520
+    call GetModuleFileNameA
+    test eax, eax
+    jz .fail
+    mov ecx, eax
+.scan:
+    test ecx, ecx
+    jz .no_dir
+    dec ecx
+    mov al, [ts_runtime_full_path+rcx]
+    cmp al, 05Ch
+    je .cut
+    cmp al, 02Fh
+    je .cut
+    jmp .scan
+.cut:
+    inc ecx
+    mov byte [ts_runtime_full_path+rcx], 0
+    lea rcx, [ts_runtime_full_path]
+    lea rdx, [ts_runtime_filename]
+    call lstrcatA
+    lea rax, [ts_runtime_full_path]
+    leave
+    ret
+.no_dir:
+    lea rcx, [ts_runtime_full_path]
+    lea rdx, [ts_runtime_filename]
+    call lstrcpyA
+    lea rax, [ts_runtime_full_path]
+    leave
+    ret
+.fail:
+    xor eax, eax
+    leave
+    ret
+
+; ------------------------------------------------------------
 ; export_game
 ; Build\Game.exe + Build\project.tsrp
 ; ------------------------------------------------------------
@@ -2974,10 +3023,15 @@ export_game:
     lea r8, [project_meta+112]
     call wsprintfA
 
-    lea rcx, [ts_runtime_src]
+    call resolve_runtime_source
+    test rax, rax
+    jz .export_fail
+    mov rcx, rax
     lea rdx, [ts_build_exe_path]
     xor r8d, r8d
     call CopyFileA
+    test eax, eax
+    jz .export_fail
 
     lea rcx, [project_path]
     lea rdx, [ts_project_dst]
