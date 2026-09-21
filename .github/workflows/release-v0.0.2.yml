@@ -1,0 +1,128 @@
+name: Release v0.0.2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release-v0.0.2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install NASM
+        shell: powershell
+        run: choco install nasm -y
+
+      - name: Build editor
+        shell: cmd
+        run: |
+          nasm -Werror -f win64 -Isrc/ src\editor.asm -o editor.obj || exit /b 1
+          link /entry:mainCRTStartup /subsystem:windows /machine:x64 /LARGEADDRESSAWARE:NO editor.obj user32.lib gdi32.lib kernel32.lib comdlg32.lib shell32.lib gdiplus.lib /out:Tsuramechoki.exe
+
+      - name: Build runtime
+        shell: cmd
+        run: |
+          nasm -Werror -f win64 -Isrc/ src\runtime.asm -o runtime.obj || exit /b 1
+          link /entry:mainCRTStartup /subsystem:windows /machine:x64 /LARGEADDRESSAWARE:NO runtime.obj user32.lib gdi32.lib kernel32.lib gdiplus.lib winmm.lib /out:TsuramechokiRuntime.exe
+
+      - name: Build assembly regression tests
+        shell: cmd
+        run: |
+          nasm -Werror -f win64 -Isrc/ tests\editor_tests.asm -o editor-tests.obj || exit /b 1
+          link /entry:mainCRTStartup /subsystem:console /machine:x64 /LARGEADDRESSAWARE:NO editor-tests.obj user32.lib gdi32.lib kernel32.lib comdlg32.lib shell32.lib gdiplus.lib /out:editor-tests.exe || exit /b 1
+          nasm -Werror -f win64 -Isrc/ tests\runtime_tests.asm -o runtime-tests.obj || exit /b 1
+          link /entry:mainCRTStartup /subsystem:console /machine:x64 /LARGEADDRESSAWARE:NO runtime-tests.obj user32.lib gdi32.lib kernel32.lib gdiplus.lib winmm.lib /out:runtime-tests.exe || exit /b 1
+
+      - name: Run regression tests and exported game
+        shell: powershell
+        run: |
+          function Run-Checked($file, $directory = $pwd.Path) {
+            $process = Start-Process -FilePath $file -WorkingDirectory $directory -PassThru
+            if (-not $process.WaitForExit(30000)) {
+              $process.Kill()
+              throw "$file timed out"
+            }
+            if ($process.ExitCode -ne 0) { throw "$file failed: $($process.ExitCode)" }
+          }
+          Run-Checked "$pwd\editor-tests.exe"
+          Run-Checked "$pwd\runtime-tests.exe"
+          $env:TSURAMECHOKI_CI_SMOKE = '1'
+          Run-Checked "$pwd\Tsuramechoki.exe"
+          Remove-Item Env:TSURAMECHOKI_CI_SMOKE
+          $env:TSURAMECHOKI_RUNTIME_SMOKE = '1'
+          Run-Checked "$pwd\Build\Game.exe" "$pwd\Build"
+          Remove-Item Env:TSURAMECHOKI_RUNTIME_SMOKE
+
+      - name: Package
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item Tsuramechoki.exe dist\Tsuramechoki.exe
+          Copy-Item TsuramechokiRuntime.exe dist\TsuramechokiRuntime.exe
+          Compress-Archive -Path dist\* -DestinationPath Tsuramechoki-v0.0.2-windows-x64.zip -Force
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tsuramechoki-windows-x64
+          path: |
+            dist/Tsuramechoki.exe
+            dist/TsuramechokiRuntime.exe
+            Tsuramechoki-v0.0.2-windows-x64.zip
+          if-no-files-found: error
+
+
+      - name: Publish v0.0.2 release with Windows binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.0.2
+          target_commitish: ${{ github.sha }}
+          name: "Tsuramechoki v0.0.2"
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/Tsuramechoki.exe
+            dist/TsuramechokiRuntime.exe
+            Tsuramechoki-v0.0.2-windows-x64.zip
+          body: |
+            # 츠라메쵸키 v0.0.2
+
+            100% x86-64 NASM 어셈블리어로 작성한 2D 액션 RPG 제작 도구의 안정성 개선 프리뷰입니다.
+
+            ## 다운로드와 실행
+            - **Tsuramechoki-v0.0.2-windows-x64.zip**을 내려받아 압축을 푼 뒤 **Tsuramechoki.exe**를 실행하세요.
+            - 에디터와 **TsuramechokiRuntime.exe**는 같은 폴더에 두세요.
+            - **F5**: 테스트 플레이 / **F9**: 게임 내보내기 / **F10**: 내보낸 게임 실행
+            - Windows x64용입니다.
+
+            ## 주요 수정
+            - 몬스터 공격·처치 중 잘못된 메모리 접근 및 MP 부족 상태의 공격 오류 수정
+            - 마우스 배치 좌표, 창 밖 드래그, 이름 입력 중 단축키 오작동 수정
+            - Windows 함수 호출 시 스택 영역 중첩과 레지스터 손상 수정
+            - 손상된 프로젝트·세이브를 불러와도 기존 편집·플레이 상태 보존
+            - 파일 전체 기록 후 교체하여 저장 실패 시 원본 보호
+            - 저장된 레벨에 맞춰 HP·공격력 상승분 복원
+            - 이벤트 명령과 파일 문자열·경로 검증 강화
+            - TSRP v3 문서와 빌드 안내 갱신
+
+            ## 검증
+            이 릴리스의 Windows 실행 파일은 NASM 조립·MSVC 링크, 어셈블리어 회귀 테스트,
+            잠긴 저장 파일의 원본 보존, 내보낸 Game.exe 초기화 실행을 통과한 뒤 첨부됩니다.
+
+            ## 호환성
+            - 프로젝트: TSRP v3 / 세이브: TSAV0001
+            - TSRP v1/v2 자동 변환은 지원하지 않습니다.
+            - 아직 초기 프리뷰이며 남은 기능 제약은 저장소의 docs/REVIEW.md에 정리돼 있습니다.
