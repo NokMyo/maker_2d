@@ -429,6 +429,47 @@ runtime_init_state:
     leave
     ret
 
+
+; ------------------------------------------------------------
+; Audio subsystem. BGM uses MCI so short SE can use PlaySound.
+; ------------------------------------------------------------
+runtime_start_audio:
+    cmp dword [project_meta+108], 0
+    je .done
+    lea rcx, [bgm_open_cmd]
+    xor edx, edx
+    xor r8d, r8d
+    xor r9d, r9d
+    call mciSendStringA
+    lea rcx, [bgm_play_cmd]
+    xor edx, edx
+    xor r8d, r8d
+    xor r9d, r9d
+    call mciSendStringA
+.done:
+    ret
+
+runtime_stop_audio:
+    cmp dword [project_meta+108], 0
+    je .done
+    lea rcx, [bgm_close_cmd]
+    xor edx, edx
+    xor r8d, r8d
+    xor r9d, r9d
+    call mciSendStringA
+.done:
+    ret
+
+runtime_play_se:
+    cmp dword [project_meta+108], 0
+    je .done
+    lea rcx, [se_path]
+    xor edx, edx
+    mov r8d, 020003h
+    call PlaySoundA
+.done:
+    ret
+
 ; ------------------------------------------------------------
 ; Per-frame RPG systems: save/load + consumable.
 ; ------------------------------------------------------------
