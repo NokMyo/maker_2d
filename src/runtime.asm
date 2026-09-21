@@ -20,6 +20,7 @@ global mainCRTStartup
 
 extern GetModuleHandleA
 extern LoadCursorA
+extern LoadImageA
 extern RegisterClassExA
 extern CreateWindowExA
 extern DefWindowProcA
@@ -34,6 +35,10 @@ extern BeginPaint
 extern EndPaint
 extern GetClientRect
 extern CreateSolidBrush
+extern CreateCompatibleDC
+extern DeleteDC
+extern GetObjectA
+extern BitBlt
 extern FillRect
 extern DeleteObject
 extern CreatePen
@@ -430,6 +435,25 @@ WndProc:
     mov [temp_rect+12], edx
 
     cmp eax, ENTITY_MONSTER
+    jne .entity_color_dispatch
+
+    mov eax, [r13+12]
+    cmp eax, 0
+    jl .entity_color_dispatch
+    cmp eax, [monster_count]
+    jae .entity_color_dispatch
+    imul eax, MONSTER_SIZE
+    mov edx, [monster_defs+rax+60]
+    mov rcx, [rbp-32]
+    mov r8d, [temp_rect+0]
+    mov r9d, [temp_rect+4]
+    call draw_animation
+    test eax, eax
+    jnz .entity_next
+
+.entity_color_dispatch:
+    mov eax, [r13+0]
+    cmp eax, ENTITY_MONSTER
     jne .check_npc
     mov ecx, [col_monster]
     jmp .fill_entity
@@ -489,6 +513,20 @@ WndProc:
     add eax, PLAYER_H
     mov [temp_rect+12], eax
 
+    xor edx, edx
+    cmp dword [attack_ticks], 0
+    jle .player_anim_ready
+    cmp dword [skill_count], 0
+    jle .player_anim_ready
+    mov edx, [skills+56]
+.player_anim_ready:
+    mov rcx, [rbp-32]
+    mov r8d, [temp_rect+0]
+    mov r9d, [temp_rect+4]
+    call draw_animation
+    test eax, eax
+    jnz .attack_preview
+
     mov ecx, [col_player]
     call CreateSolidBrush
     mov [rbp-40], rax
@@ -499,6 +537,7 @@ WndProc:
     mov rcx, [rbp-40]
     call DeleteObject
 
+.attack_preview:
     ; attack hitbox preview
     cmp dword [attack_ticks], 0
     je .hud
