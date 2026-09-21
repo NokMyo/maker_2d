@@ -87,6 +87,7 @@ extern lstrlenA
 
 %define VK_LEFT             0x25
 %define VK_RIGHT            0x27
+%define VK_DOWN             0x28
 %define VK_SPACE            0x20
 %define VK_A                0x41
 %define VK_D                0x44
@@ -161,6 +162,7 @@ section .bss
     player_vx        resd 1
     player_vy        resd 1
     player_grounded  resd 1
+    drop_through_ticks resd 1
     facing_right     resd 1
     camera_x         resd 1
 
@@ -752,6 +754,10 @@ update_game:
     jmp .done
 
 .movement:
+    cmp dword [drop_through_ticks], 0
+    jle .movement_ready
+    dec dword [drop_through_ticks]
+.movement_ready:
     mov dword [player_vx], 0
 
     mov ecx, VK_LEFT
@@ -792,6 +798,19 @@ update_game:
     call GetAsyncKeyState
     test ax, 8000h
     jz .attack_input
+
+    mov ecx, VK_DOWN
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .normal_jump
+
+    mov dword [drop_through_ticks], 12
+    mov dword [player_grounded], 0
+    mov dword [player_vy], 2
+    add dword [player_y], 4
+    jmp .attack_input
+
+.normal_jump:
     mov eax, [player_jump_speed]
     mov [player_vy], eax
     mov dword [player_grounded], 0
@@ -894,6 +913,8 @@ update_game:
 
     cmp dword [player_vy], 0
     jl .after_collision
+    cmp dword [drop_through_ticks], 0
+    jg .after_collision
 
     mov eax, [player_y]
     add eax, PLAYER_H
@@ -923,14 +944,29 @@ update_game:
     cmp eax, [r13+8]
     jg .collision_next
 
-    mov eax, [rbp-8]
-    cmp eax, [r13+4]
+    ; foothold_y = y1 + (centerX-x1)*(y2-y1)/(x2-x1)
+    mov ecx, [r13+8]
+    sub ecx, [r13+0]
+    test ecx, ecx
+    jz .collision_next
+
+    mov eax, [rbp-16]
+    sub eax, [r13+0]
+    mov edx, [r13+12]
+    sub edx, [r13+4]
+    imul eax, edx
+    cdq
+    idiv ecx
+    add eax, [r13+4]
+    mov [rbp-24], eax                  ; interpolated surface y
+
+    mov edx, [rbp-8]
+    cmp edx, eax
     jg .collision_next
-    mov eax, [rbp-12]
-    cmp eax, [r13+4]
+    mov edx, [rbp-12]
+    cmp edx, eax
     jl .collision_next
 
-    mov eax, [r13+4]
     sub eax, PLAYER_H
     mov [player_y], eax
     mov dword [player_vy], 0
@@ -1547,6 +1583,7 @@ initialize_player:
     mov [player_y], eax
     mov dword [player_vx], 0
     mov dword [player_vy], 0
+    mov dword [drop_through_ticks], 0
 
     mov r12, [rbp-40]
     mov r13, [rbp-48]
