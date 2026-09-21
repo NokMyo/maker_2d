@@ -15,9 +15,9 @@
 | Mouse wheel | Pan horizontally |
 | Home | Reset editor camera to world X=0 |
 | Ctrl+N | Reset to starter project |
-| Ctrl+S | Save project.lprj |
-| Ctrl+O | Load project.lprj |
-| F5 | Save and launch LeellaRuntime.exe |
+| Ctrl+S | Save project.tsrp |
+| Ctrl+O | Load project.tsrp |
+| F5 | Save and launch TsuramechokiRuntime.exe |
 
 Platform editing uses a 16 px snap. Drag horizontally on the canvas while the Platform tool is active.
 
