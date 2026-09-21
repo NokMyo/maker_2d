@@ -19,6 +19,7 @@ default rel
 global mainCRTStartup
 
 extern GetModuleHandleA
+extern GetEnvironmentVariableA
 extern LoadCursorA
 extern LoadImageA
 extern RegisterClassExA
@@ -124,6 +125,7 @@ section .data
 
     load_error_title db "Tsuramechoki Runtime",0
     load_error_text  db "project.tsrp could not be loaded.",0
+    runtime_smoke_env db "TSURAMECHOKI_RUNTIME_SMOKE",0
     bgm_open_cmd     db 'open "Assets\\BGM.wav" type waveaudio alias tsbgm',0
     bgm_play_cmd     db "play tsbgm repeat",0
     bgm_close_cmd    db "close tsbgm",0
@@ -181,6 +183,7 @@ section .bss
     gdip_graphics    resq 1
     gdip_width       resd 1
     gdip_height      resd 1
+    runtime_smoke_buf resb 8
 
     platform_count   resd 1
     entity_count     resd 1
@@ -233,6 +236,18 @@ mainCRTStartup:
 .project_ok:
     call apply_player_class
 
+    lea rcx, [runtime_smoke_env]
+    lea rdx, [runtime_smoke_buf]
+    mov r8d, 8
+    call GetEnvironmentVariableA
+    test eax, eax
+    jz .normal_runtime_start
+    call runtime_init_state
+    call initialize_player
+    xor ecx, ecx
+    call ExitProcess
+
+.normal_runtime_start:
     lea rcx, [gdip_token]
     lea rdx, [gdip_startup_input]
     xor r8d, r8d
