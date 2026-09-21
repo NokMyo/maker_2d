@@ -10,6 +10,9 @@ section .data
     ts_name_quest        db "Quest",0
     ts_name_variable     db "Variable",0
     ts_name_event        db "Event",0
+    ts_name_sprite       db "Sprite",0
+    ts_import_title      db "Import BMP Sprite Sheet",0
+    ts_bmp_filter        db "Bitmap (*.bmp)",0,"*.bmp",0,"All Files",0,"*.*",0,0
 
     ts_default_map       db "Map_001",0
     ts_default_idle      db "PlayerIdle",0
@@ -31,7 +34,7 @@ section .data
     ts_fmt_value         db "Value: %d",0
     ts_help1             db "F1 Project  F2 Player  F6 DB cycle",0
     ts_help1_len         equ $-ts_help1-1
-    ts_help2             db "TAB field  +/- edit  INS add record",0
+    ts_help2             db "TAB field  +/- edit  INS add  F7 sprite BMP",0
     ts_help2_len         equ $-ts_help2-1
     ts_help3             db "PgUp/PgDn map  Ctrl+M new map  F9 build",0
     ts_help3_len         equ $-ts_help3-1
@@ -51,6 +54,7 @@ section .bss
     quests               resb MAX_QUESTS*QUEST_SIZE
     variables            resb MAX_VARIABLES*VARIABLE_SIZE
     events               resb MAX_EVENTS*EVENT_SIZE
+    sprites              resb MAX_SPRITES*SPRITE_SIZE
 
     map_count            resd 1
     active_map           resd 1
@@ -70,6 +74,9 @@ section .bss
     quest_count          resd 1
     variable_count       resd 1
     event_count          resd 1
+    sprite_count         resd 1
+    ts_ofn               resb 160
+    ts_file_buffer       resb 260
 
     editor_panel_mode    resd 1
     property_index       resd 1
@@ -114,6 +121,7 @@ init_project_systems:
     mov dword [animations+32], 4
     mov dword [animations+36], 120
     mov dword [animations+64], 1
+    mov dword [animations+68], -1
 
     lea rcx, [animations+ANIMATION_SIZE]
     lea rdx, [ts_default_attack]
@@ -126,6 +134,7 @@ init_project_systems:
     mov dword [animations+ANIMATION_SIZE+52], 4
     mov dword [animations+ANIMATION_SIZE+56], 70
     mov dword [animations+ANIMATION_SIZE+60], 42
+    mov dword [animations+ANIMATION_SIZE+68], -1
 
     lea rcx, [animations+ANIMATION_SIZE*2]
     lea rdx, [ts_default_monster_anim]
@@ -133,6 +142,7 @@ init_project_systems:
     mov dword [animations+ANIMATION_SIZE*2+32], 4
     mov dword [animations+ANIMATION_SIZE*2+36], 140
     mov dword [animations+ANIMATION_SIZE*2+64], 1
+    mov dword [animations+ANIMATION_SIZE*2+68], -1
 
     mov dword [skill_count], 1
     lea rcx, [skills]
@@ -186,6 +196,7 @@ init_project_systems:
     call lstrcpyA
     mov dword [variables+32], 0
 
+    mov dword [sprite_count], 0
     mov dword [event_count], 1
     lea rcx, [events]
     lea rdx, [ts_name_event]
@@ -273,7 +284,8 @@ save_project:
     mov [database_header+20], eax
     mov eax, [event_count]
     mov [database_header+24], eax
-    mov dword [database_header+28], 0
+    mov eax, [sprite_count]
+    mov [database_header+28], eax
 
     lea rcx, [project_path]
     mov edx, GENERIC_WRITE
@@ -416,6 +428,15 @@ save_project:
     imul eax, EVENT_SIZE
     mov rcx, [rbp-16]
     lea rdx, [events]
+    mov r8d, eax
+    call ts_write_block
+    test eax, eax
+    jz .close_fail
+
+    mov eax, [sprite_count]
+    imul eax, SPRITE_SIZE
+    mov rcx, [rbp-16]
+    lea rdx, [sprites]
     mov r8d, eax
     call ts_write_block
     test eax, eax
@@ -599,6 +620,10 @@ load_project:
     cmp eax, MAX_EVENTS
     ja .close_fail
     mov [event_count], eax
+    mov eax, [database_header+28]
+    cmp eax, MAX_SPRITES
+    ja .close_fail
+    mov [sprite_count], eax
 
     mov eax, [animation_count]
     imul eax, ANIMATION_SIZE
@@ -658,6 +683,15 @@ load_project:
     imul eax, EVENT_SIZE
     mov rcx, [rbp-16]
     lea rdx, [events]
+    mov r8d, eax
+    call ts_read_block
+    test eax, eax
+    jz .close_fail
+
+    mov eax, [sprite_count]
+    imul eax, SPRITE_SIZE
+    mov rcx, [rbp-16]
+    lea rdx, [sprites]
     mov r8d, eax
     call ts_read_block
     test eax, eax
@@ -760,6 +794,8 @@ system_keydown:
     je .player
     cmp ecx, 075h                 ; F6
     je .database
+    cmp ecx, 076h                 ; F7 sprite import
+    je .import_sprite
     cmp ecx, 078h                 ; F9
     je .build
     cmp ecx, 021h                 ; PgUp
@@ -813,6 +849,9 @@ system_keydown:
     mov dword [editor_panel_mode], 3
     mov dword [property_index], 0
     mov dword [database_index], 0
+    jmp .handled
+.import_sprite:
+    call ts_import_sprite
     jmp .handled
 .build:
     call export_game
@@ -1192,6 +1231,7 @@ ts_add_database_record:
     imul eax, ANIMATION_SIZE
     mov dword [animations+rax+32], 1
     mov dword [animations+rax+36], 100
+    mov dword [animations+rax+68], -1
     inc dword [animation_count]
     jmp .done
 .skill:
@@ -1379,6 +1419,75 @@ system_draw_panel:
     call TextOutA
 
     mov r12, [rbp-40]
+    leave
+    ret
+
+
+; ------------------------------------------------------------
+; Import BMP sprite sheet and attach it to selected animation.
+; ------------------------------------------------------------
+ts_import_sprite:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 112
+    mov [rbp-40], rdi
+
+    cmp dword [sprite_count], MAX_SPRITES
+    jae .done
+
+    lea rdi, [ts_ofn]
+    xor eax, eax
+    mov ecx, 20
+    rep stosq
+    lea rdi, [ts_file_buffer]
+    mov ecx, 33
+    rep stosq
+
+    mov dword [ts_ofn+0], 152
+    mov rax, [hwnd_main]
+    mov [ts_ofn+8], rax
+    lea rax, [ts_bmp_filter]
+    mov [ts_ofn+24], rax
+    lea rax, [ts_file_buffer]
+    mov [ts_ofn+48], rax
+    mov dword [ts_ofn+56], 260
+    lea rax, [ts_import_title]
+    mov [ts_ofn+88], rax
+    mov dword [ts_ofn+96], 01800h
+
+    lea rcx, [ts_ofn]
+    call GetOpenFileNameA
+    test eax, eax
+    jz .done
+
+    mov eax, [sprite_count]
+    mov [rbp-8], eax
+    imul eax, SPRITE_SIZE
+    lea rcx, [sprites+rax]
+    lea rdx, [ts_name_sprite]
+    call lstrcpyA
+
+    mov eax, [rbp-8]
+    imul eax, SPRITE_SIZE
+    lea rcx, [sprites+rax+32]
+    lea rdx, [ts_file_buffer]
+    mov r8d, 128
+    call lstrcpynA
+
+    cmp dword [editor_panel_mode], 3
+    jne .count
+    mov eax, [database_index]
+    cmp eax, [animation_count]
+    jae .count
+    imul eax, ANIMATION_SIZE
+    mov edx, [rbp-8]
+    mov [animations+rax+68], edx
+
+.count:
+    inc dword [sprite_count]
+
+.done:
+    mov rdi, [rbp-40]
     leave
     ret
 
