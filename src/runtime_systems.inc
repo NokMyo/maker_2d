@@ -29,6 +29,7 @@ section .bss
     quests                resb MAX_QUESTS*QUEST_SIZE
     variables             resb MAX_VARIABLES*VARIABLE_SIZE
     events                resb MAX_EVENTS*EVENT_SIZE
+    sprites               resb MAX_SPRITES*SPRITE_SIZE
 
     map_count             resd 1
     active_map            resd 1
@@ -48,6 +49,7 @@ section .bss
     quest_count           resd 1
     variable_count        resd 1
     event_count           resd 1
+    sprite_count          resd 1
 
     player_mp             resd 1
     player_exp            resd 1
@@ -64,6 +66,8 @@ section .bss
     equipped_armor        resd 1
     player_defense        resd 1
     mp_regen_tick         resd 1
+    game_tick             resd 1
+    ts_bitmap_info        resb 32
     ts_hud_buffer         resb 160
 
 section .text
@@ -254,6 +258,10 @@ load_project:
     cmp eax, MAX_EVENTS
     ja .close_fail
     mov [event_count], eax
+    mov eax, [database_header+28]
+    cmp eax, MAX_SPRITES
+    ja .close_fail
+    mov [sprite_count], eax
 
     mov eax, [animation_count]
     imul eax, ANIMATION_SIZE
@@ -318,6 +326,15 @@ load_project:
     test eax, eax
     jz .close_fail
 
+    mov eax, [sprite_count]
+    imul eax, SPRITE_SIZE
+    mov rcx, [rbp-16]
+    lea rdx, [sprites]
+    mov r8d, eax
+    call ts_rt_read_block
+    test eax, eax
+    jz .close_fail
+
     mov rcx, [rbp-16]
     call CloseHandle
     mov eax, 1
@@ -355,6 +372,7 @@ runtime_init_state:
     mov dword [equipped_armor], -1
     mov dword [player_defense], 0
     mov dword [mp_regen_tick], 0
+    mov dword [game_tick], 0
 
     ; give a few starter potions when item 0 exists
     cmp dword [item_count], 0
@@ -386,6 +404,7 @@ runtime_update_systems:
     sub rsp, 48
 
     call update_checkpoint
+    inc dword [game_tick]
 
     inc dword [mp_regen_tick]
     cmp dword [mp_regen_tick], 60
@@ -1149,6 +1168,145 @@ equipment_attack_bonus:
     ret
 .none:
     xor eax, eax
+    ret
+
+
+; ------------------------------------------------------------
+; Draw one frame from an imported BMP sprite sheet.
+; rcx=HDC, edx=animation id, r8d=x, r9d=y
+; eax=1 drawn, 0 fallback
+; ------------------------------------------------------------
+draw_animation:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 128
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+    mov [rbp-56], r14
+    mov [rbp-64], r15
+
+    mov r12, rcx
+    mov [rbp-8], r8d
+    mov [rbp-12], r9d
+
+    cmp edx, 0
+    jl .fail
+    cmp edx, [animation_count]
+    jae .fail
+
+    mov eax, edx
+    imul eax, ANIMATION_SIZE
+    lea r13, [animations+rax]
+
+    mov eax, [r13+68]
+    cmp eax, 0
+    jl .fail
+    cmp eax, [sprite_count]
+    jae .fail
+
+    imul eax, SPRITE_SIZE
+    lea r14, [sprites+rax]
+    cmp byte [r14+32], 0
+    je .fail
+
+    xor ecx, ecx
+    lea rdx, [r14+32]
+    xor r8d, r8d
+    xor r9d, r9d
+    mov qword [rsp+32], 0
+    mov qword [rsp+40], 02010h
+    call LoadImageA
+    test rax, rax
+    jz .fail
+    mov r15, rax
+
+    mov rcx, rax
+    mov edx, 32
+    lea r8, [ts_bitmap_info]
+    call GetObjectA
+    test eax, eax
+    jz .delete_bitmap
+
+    mov rcx, r12
+    call CreateCompatibleDC
+    test rax, rax
+    jz .delete_bitmap
+    mov [rbp-24], rax
+
+    mov rcx, rax
+    mov rdx, r15
+    call SelectObject
+    mov [rbp-32], rax
+
+    mov ecx, [r13+32]
+    cmp ecx, 1
+    jge .frames_ok
+    mov ecx, 1
+.frames_ok:
+    mov eax, [ts_bitmap_info+4]
+    cdq
+    idiv ecx
+    mov [rbp-16], eax              ; frame width
+
+    mov eax, [r13+36]
+    cdq
+    mov ecx, 16
+    idiv ecx
+    cmp eax, 1
+    jge .ticks_ok
+    mov eax, 1
+.ticks_ok:
+    mov ecx, eax
+    mov eax, [game_tick]
+    xor edx, edx
+    div ecx
+
+    mov ecx, [r13+32]
+    cmp ecx, 1
+    jge .mod_ok
+    mov ecx, 1
+.mod_ok:
+    xor edx, edx
+    div ecx
+    mov eax, edx
+    imul eax, [rbp-16]
+    mov [rbp-20], eax              ; source x
+
+    mov rcx, r12
+    mov edx, [rbp-8]
+    mov r8d, [rbp-12]
+    mov r9d, [rbp-16]
+    mov eax, [ts_bitmap_info+8]
+    mov [rsp+32], rax
+    mov rax, [rbp-24]
+    mov [rsp+40], rax
+    mov eax, [rbp-20]
+    mov [rsp+48], rax
+    mov qword [rsp+56], 0
+    mov qword [rsp+64], 00CC0020h
+    call BitBlt
+
+    mov rcx, [rbp-24]
+    mov rdx, [rbp-32]
+    call SelectObject
+    mov rcx, [rbp-24]
+    call DeleteDC
+    mov rcx, r15
+    call DeleteObject
+    mov eax, 1
+    jmp .done
+
+.delete_bitmap:
+    mov rcx, r15
+    call DeleteObject
+.fail:
+    xor eax, eax
+.done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
+    mov r14, [rbp-56]
+    mov r15, [rbp-64]
+    leave
     ret
 
 ; ------------------------------------------------------------
