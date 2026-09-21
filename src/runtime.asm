@@ -121,6 +121,10 @@ section .data
     col_monster      dd 0x006B6BE0
     col_npc          dd 0x0076C48A
     col_portal       dd 0x00D67FD4
+    col_ladder       dd 0x0076A6C4
+    col_checkpoint   dd 0x006FD6C0
+    col_decor        dd 0x00847A72
+    col_event        dd 0x00E09762
     col_attack       dd 0x006FB5F2
     col_text         dd 0x00F2EEE8
     col_hp           dd 0x006DCC75
@@ -435,7 +439,29 @@ WndProc:
     mov ecx, [col_npc]
     jmp .fill_entity
 .check_portal:
+    cmp eax, ENTITY_PORTAL
+    jne .check_ladder
     mov ecx, [col_portal]
+    jmp .fill_entity
+.check_ladder:
+    cmp eax, ENTITY_LADDER
+    je .ladder_color
+    cmp eax, ENTITY_ROPE
+    je .ladder_color
+    cmp eax, ENTITY_CHECKPOINT
+    jne .check_decor
+    mov ecx, [col_checkpoint]
+    jmp .fill_entity
+.ladder_color:
+    mov ecx, [col_ladder]
+    jmp .fill_entity
+.check_decor:
+    cmp eax, ENTITY_DECOR
+    jne .event_color
+    mov ecx, [col_decor]
+    jmp .fill_entity
+.event_color:
+    mov ecx, [col_event]
 
 .fill_entity:
     call CreateSolidBrush
@@ -705,14 +731,48 @@ update_game:
 
     mov dword [attack_ticks], 8
     mov dword [attack_cooldown], 18
+
+    cmp dword [skill_count], 0
+    jle .attack_ready
+    mov eax, [skills+36]
+    cmp [player_mp], eax
+    jl .physics
+    sub [player_mp], eax
+
+    mov eax, [skills+40]
+    cmp eax, 1
+    jge .cooldown_ready
+    mov eax, 1
+.cooldown_ready:
+    mov [attack_cooldown], eax
+
+    mov eax, [skills+56]
+    cmp eax, 0
+    jl .attack_ready
+    cmp eax, [animation_count]
+    jae .attack_ready
+    imul eax, ANIMATION_SIZE
+    mov eax, [animations+rax+32]
+    cmp eax, 1
+    jge .ticks_ready
+    mov eax, 1
+.ticks_ready:
+    mov [attack_ticks], eax
+
+.attack_ready:
     mov dword [attack_hit_done], 0
 
 .physics:
     mov eax, [player_vx]
     add [player_x], eax
     cmp dword [player_x], 0
-    jge .gravity
+    jge .traversal
     mov dword [player_x], 0
+
+.traversal:
+    call update_traversal
+    test eax, eax
+    jnz .after_collision
 
 .gravity:
     ; previous bottom
@@ -890,7 +950,11 @@ attack_monsters:
     mov ecx, r12d
     shl rcx, 2
     add rax, rcx
-    mov edx, [player_base_attack]
+    push rax
+    call equipment_attack_bonus
+    mov edx, eax
+    pop rax
+    add edx, [player_base_attack]
     cmp dword [skill_count], 0
     jle .damage_ready
     add edx, [skills+32]
@@ -1011,6 +1075,11 @@ update_monsters_and_damage:
 .contact_damage_default:
     mov eax, 1
 .contact_damage_ready:
+    sub eax, [player_defense]
+    cmp eax, 1
+    jge .contact_after_def
+    mov eax, 1
+.contact_after_def:
     sub [player_hp], eax
     mov dword [invuln_ticks], 60
     mov dword [player_vy], -8
@@ -1086,6 +1155,8 @@ update_interaction:
     cmp eax, ENTITY_NPC
     je .range
     cmp eax, ENTITY_PORTAL
+    je .range
+    cmp eax, ENTITY_EVENT
     jne .next
 
 .range:
@@ -1108,9 +1179,16 @@ update_interaction:
     jg .next
 
     cmp dword [r13+0], ENTITY_NPC
-    jne .portal
+    jne .check_event
     mov ecx, [r13+12]
     call npc_quest_interact
+    jmp .done
+
+.check_event:
+    cmp dword [r13+0], ENTITY_EVENT
+    jne .portal
+    mov ecx, [r13+12]
+    call run_event
     jmp .done
 
 .portal:
