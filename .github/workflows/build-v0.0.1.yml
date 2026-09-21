@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/build-v0.0.1.yml"
+      - "src/**"
 
 permissions:
   contents: write
