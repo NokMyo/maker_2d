@@ -76,7 +76,11 @@ extern PlaySoundA
 %define CS_HREDRAW          0x0002
 %define CS_VREDRAW          0x0001
 %define WS_OVERLAPPEDWINDOW 0x00CF0000
+%define WS_POPUP            0x80000000
 %define WS_VISIBLE          0x10000000
+%define IMAGE_ICON          1
+%define LR_LOADFROMFILE     0x0010
+%define LR_DEFAULTSIZE      0x0040
 %define CW_USEDEFAULT       0x80000000
 %define SW_SHOW             5
 
@@ -257,6 +261,21 @@ mainCRTStartup:
     call LoadCursorA
     mov [wc_buf+40], rax
 
+    cmp byte [project_meta+160], 0
+    je .icon_ready
+    xor ecx, ecx
+    lea rdx, [project_meta+160]
+    mov r8d, IMAGE_ICON
+    xor r9d, r9d
+    mov qword [rsp+32], 0
+    mov qword [rsp+40], LR_LOADFROMFILE | LR_DEFAULTSIZE
+    call LoadImageA
+    test rax, rax
+    jz .icon_ready
+    mov [wc_buf+32], rax
+    mov [wc_buf+72], rax
+.icon_ready:
+
     lea rax, [class_name]
     mov [wc_buf+64], rax
 
@@ -268,7 +287,13 @@ mainCRTStartup:
     xor ecx, ecx
     lea rdx, [class_name]
     lea r8, [project_meta]
+    cmp dword [project_meta+104], 0
+    jne .borderless_style
     mov r9d, WS_OVERLAPPEDWINDOW | WS_VISIBLE
+    jmp .style_ready
+.borderless_style:
+    mov r9d, WS_POPUP | WS_VISIBLE
+.style_ready:
     mov qword [rsp+32], CW_USEDEFAULT
     mov qword [rsp+40], CW_USEDEFAULT
     mov eax, [screen_width]
