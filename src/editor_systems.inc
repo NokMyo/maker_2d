@@ -40,6 +40,9 @@ section .data
     ts_fmt_map           db "Map %d / %d",0
     ts_fmt_mode          db "Editor mode %d   field %d",0
     ts_fmt_value         db "Value: %d",0
+    ts_anim_fmt          db "Frames %d  Active %d-%d  Sprite %d",0
+    ts_event_fmt         db "Cmd %d/%d  OP %d  A %d  B %d  C %d",0
+    ts_ui_fmt            db "HUD (%d,%d)  Minimap %d",0
     ts_project_fmt       db "Project: %s",0
     ts_rename_hint       db "F8 Rename project (type, Enter done)",0
     ts_rename_hint_len   equ $-ts_rename_hint-1
@@ -2021,10 +2024,228 @@ system_draw_panel:
     mov qword [rsp+32], ts_rename_hint_len
     call TextOutA
 
+    mov rcx, r12
+    call draw_mode_preview
+
     mov r12, [rbp-40]
     leave
     ret
 
+; ------------------------------------------------------------
+; Visual previews for animation/event/UI editor modes.
+; ------------------------------------------------------------
+draw_mode_preview:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 112
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+    mov [rbp-56], r14
+    mov r12, rcx
+
+    mov eax, [editor_panel_mode]
+    cmp eax, 3
+    je .animation
+    cmp eax, 9
+    je .event
+    cmp eax, 11
+    je .ui
+    jmp .done
+
+.animation:
+    mov eax, [database_index]
+    cmp eax, [animation_count]
+    jae .done
+    imul eax, ANIMATION_SIZE
+    lea r13, [animations+rax]
+
+    lea rcx, [ts_text_buffer]
+    lea rdx, [ts_anim_fmt]
+    mov r8d, [r13+32]
+    mov r9d, [r13+40]
+    mov eax, [r13+44]
+    mov [rsp+32], rax
+    mov eax, [r13+68]
+    mov [rsp+40], rax
+    call wsprintfA
+    mov [rbp-8], eax
+
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    add eax, 18
+    mov edx, eax
+    mov rcx, r12
+    mov r8d, 420
+    lea r9, [ts_text_buffer]
+    mov eax, [rbp-8]
+    mov [rsp+32], rax
+    call TextOutA
+
+    xor r14d, r14d
+.anim_loop:
+    cmp r14d, [r13+32]
+    jae .hitbox
+    cmp r14d, 24
+    jae .hitbox
+    mov ecx, [col_grid]
+    cmp r14d, [r13+40]
+    jl .anim_color
+    cmp r14d, [r13+44]
+    jg .anim_color
+    mov ecx, [col_preview]
+.anim_color:
+    call CreateSolidBrush
+    mov [rbp-16], rax
+
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    add eax, 18
+    mov ecx, r14d
+    imul ecx, 9
+    add eax, ecx
+    mov [temp_rect+0], eax
+    add eax, 7
+    mov [temp_rect+8], eax
+    mov dword [temp_rect+4], 446
+    mov dword [temp_rect+12], 462
+    mov rcx, r12
+    lea rdx, [temp_rect]
+    mov r8, [rbp-16]
+    call FillRect
+    mov rcx, [rbp-16]
+    call DeleteObject
+    inc r14d
+    jmp .anim_loop
+
+.hitbox:
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    add eax, 80
+    mov ecx, [r13+48]
+    sar ecx, 1
+    add eax, ecx
+    mov [temp_rect+0], eax
+    mov ecx, [r13+56]
+    sar ecx, 1
+    add eax, ecx
+    cmp eax, [temp_rect+0]
+    jg .hb_w_ok
+    mov eax, [temp_rect+0]
+    inc eax
+.hb_w_ok:
+    mov [temp_rect+8], eax
+
+    mov eax, 490
+    mov ecx, [r13+52]
+    sar ecx, 1
+    add eax, ecx
+    mov [temp_rect+4], eax
+    mov ecx, [r13+60]
+    sar ecx, 1
+    add eax, ecx
+    cmp eax, [temp_rect+4]
+    jg .hb_h_ok
+    mov eax, [temp_rect+4]
+    inc eax
+.hb_h_ok:
+    mov [temp_rect+12], eax
+
+    mov ecx, [col_preview]
+    call CreateSolidBrush
+    mov [rbp-16], rax
+    mov rcx, r12
+    lea rdx, [temp_rect]
+    mov r8, rax
+    call FillRect
+    mov rcx, [rbp-16]
+    call DeleteObject
+    jmp .done
+
+.event:
+    mov eax, [database_index]
+    cmp eax, [event_count]
+    jae .done
+    imul eax, EVENT_SIZE
+    lea r13, [events+rax]
+    mov eax, [event_command_index]
+    imul eax, EVENT_COMMAND_SIZE
+    lea r14, [r13+rax+48]
+
+    lea rcx, [ts_text_buffer]
+    lea rdx, [ts_event_fmt]
+    mov r8d, [event_command_index]
+    inc r8d
+    mov r9d, [r13+32]
+    mov eax, [r14+0]
+    mov [rsp+32], rax
+    mov eax, [r14+4]
+    mov [rsp+40], rax
+    mov eax, [r14+8]
+    mov [rsp+48], rax
+    mov eax, [r14+12]
+    mov [rsp+56], rax
+    call wsprintfA
+    mov [rbp-8], eax
+
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    add eax, 18
+    mov edx, eax
+    mov rcx, r12
+    mov r8d, 420
+    lea r9, [ts_text_buffer]
+    mov eax, [rbp-8]
+    mov [rsp+32], rax
+    call TextOutA
+    jmp .done
+
+.ui:
+    lea rcx, [ts_text_buffer]
+    lea rdx, [ts_ui_fmt]
+    mov r8d, [project_meta+64]
+    mov r9d, [project_meta+68]
+    mov eax, [project_meta+72]
+    mov [rsp+32], rax
+    call wsprintfA
+    mov [rbp-8], eax
+
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    add eax, 18
+    mov edx, eax
+    mov rcx, r12
+    mov r8d, 420
+    lea r9, [ts_text_buffer]
+    mov eax, [rbp-8]
+    mov [rsp+32], rax
+    call TextOutA
+
+    mov eax, [project_meta+64]
+    add eax, LEFT_PANEL
+    mov [temp_rect+0], eax
+    add eax, 200
+    mov [temp_rect+8], eax
+    mov eax, [project_meta+68]
+    add eax, TOP_BAR
+    mov [temp_rect+4], eax
+    add eax, 16
+    mov [temp_rect+12], eax
+    mov ecx, [col_preview]
+    call CreateSolidBrush
+    mov [rbp-16], rax
+    mov rcx, r12
+    lea rdx, [temp_rect]
+    mov r8, rax
+    call FillRect
+    mov rcx, [rbp-16]
+    call DeleteObject
+
+.done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
+    mov r14, [rbp-56]
+    leave
+    ret
 
 
 ; ------------------------------------------------------------
