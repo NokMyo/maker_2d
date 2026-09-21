@@ -16,7 +16,9 @@
 ; +36  dword spawn_x
 ; +40  dword spawn_y
 ; +44  dword music_id
-; +48..63 reserved
+; +48  dword background_sprite_id (-1 = solid color)
+; +52  dword layer_flags
+; +56..63 reserved
 
 ; ------------------------------------------------------------
 ; Sprite asset database (BMP in the current native GDI renderer)
