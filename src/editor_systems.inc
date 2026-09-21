@@ -13,6 +13,10 @@ section .data
     ts_name_sprite       db "Sprite",0
     ts_import_title      db "Import BMP Sprite Sheet",0
     ts_bmp_filter        db "Bitmap (*.bmp)",0,"*.bmp",0,"All Files",0,"*.*",0,0
+    ts_assets_dir        db "Assets",0
+    ts_build_assets_dir  db "Build\Assets",0
+    ts_sprite_path_fmt   db "Assets\Sprite%03d.bmp",0
+    ts_build_asset_fmt   db "Build\%s",0
 
     ts_default_map       db "Map_001",0
     ts_default_idle      db "PlayerIdle",0
@@ -77,6 +81,8 @@ section .bss
     sprite_count         resd 1
     ts_ofn               resb 160
     ts_file_buffer       resb 260
+    ts_asset_path        resb 160
+    ts_build_asset_path  resb 192
 
     editor_panel_mode    resd 1
     property_index       resd 1
@@ -1467,10 +1473,25 @@ ts_import_sprite:
     lea rdx, [ts_name_sprite]
     call lstrcpyA
 
+    lea rcx, [ts_assets_dir]
+    xor edx, edx
+    call CreateDirectoryA
+
+    lea rcx, [ts_asset_path]
+    lea rdx, [ts_sprite_path_fmt]
+    mov r8d, [rbp-8]
+    inc r8d
+    call wsprintfA
+
+    lea rcx, [ts_file_buffer]
+    lea rdx, [ts_asset_path]
+    xor r8d, r8d
+    call CopyFileA
+
     mov eax, [rbp-8]
     imul eax, SPRITE_SIZE
     lea rcx, [sprites+rax+32]
-    lea rdx, [ts_file_buffer]
+    lea rdx, [ts_asset_path]
     mov r8d, 128
     call lstrcpynA
 
@@ -1516,5 +1537,36 @@ export_game:
     xor r8d, r8d
     call CopyFileA
 
+    lea rcx, [ts_build_assets_dir]
+    xor edx, edx
+    call CreateDirectoryA
+
+    xor r10d, r10d
+.asset_loop:
+    cmp r10d, [sprite_count]
+    jae .export_done
+    mov eax, r10d
+    imul eax, SPRITE_SIZE
+    lea r11, [sprites+rax]
+    cmp byte [r11+32], 0
+    je .asset_next
+
+    lea rcx, [ts_build_asset_path]
+    lea rdx, [ts_build_asset_fmt]
+    lea r8, [r11+32]
+    call wsprintfA
+
+    mov eax, r10d
+    imul eax, SPRITE_SIZE
+    lea r11, [sprites+rax]
+    lea rcx, [r11+32]
+    lea rdx, [ts_build_asset_path]
+    xor r8d, r8d
+    call CopyFileA
+.asset_next:
+    inc r10d
+    jmp .asset_loop
+
+.export_done:
     leave
     ret
