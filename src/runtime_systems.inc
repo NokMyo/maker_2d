@@ -36,6 +36,7 @@ section .bss
     variables             resb MAX_VARIABLES*VARIABLE_SIZE
     events                resb MAX_EVENTS*EVENT_SIZE
     sprites               resb MAX_SPRITES*SPRITE_SIZE
+    class_defs            resb MAX_CLASSES*CLASS_SIZE
 
     map_count             resd 1
     active_map            resd 1
@@ -59,6 +60,8 @@ section .bss
     variable_count        resd 1
     event_count           resd 1
     sprite_count          resd 1
+    class_count           resd 1
+    skill_slot_ids        resd 4
 
     player_mp             resd 1
     player_exp            resd 1
@@ -292,6 +295,10 @@ load_project:
     cmp eax, MAX_SPRITES
     ja .close_fail
     mov [sprite_count], eax
+    mov eax, [database_header+32]
+    cmp eax, MAX_CLASSES
+    ja .close_fail
+    mov [class_count], eax
 
     mov eax, [animation_count]
     imul eax, ANIMATION_SIZE
@@ -365,6 +372,15 @@ load_project:
     test eax, eax
     jz .close_fail
 
+    mov eax, [class_count]
+    imul eax, CLASS_SIZE
+    mov rcx, [rbp-16]
+    lea rdx, [class_defs]
+    mov r8d, eax
+    call ts_rt_read_block
+    test eax, eax
+    jz .close_fail
+
     mov rcx, [rbp-16]
     call CloseHandle
     mov eax, 1
@@ -377,6 +393,62 @@ load_project:
 .fail:
     xor eax, eax
     leave
+    ret
+
+; ------------------------------------------------------------
+; Apply the project's selected starting class/job.
+; project_flags stores the class id in TSRP v3.
+; ------------------------------------------------------------
+apply_player_class:
+    mov dword [skill_slot_ids+0], 0
+    mov dword [skill_slot_ids+4], 1
+    mov dword [skill_slot_ids+8], 2
+    mov dword [skill_slot_ids+12], 3
+
+    cmp dword [class_count], 0
+    jle .done
+    mov eax, [project_flags]
+    cmp eax, 0
+    jl .done
+    cmp eax, [class_count]
+    jae .done
+    imul eax, CLASS_SIZE
+    lea r10, [class_defs+rax]
+
+    mov eax, [r10+32]
+    cmp eax, 1
+    jl .hp_done
+    mov [player_max_hp], eax
+.hp_done:
+    mov eax, [r10+36]
+    cmp eax, 0
+    jl .mp_done
+    mov [player_max_mp], eax
+.mp_done:
+    mov eax, [r10+40]
+    cmp eax, 1
+    jl .atk_done
+    mov [player_base_attack], eax
+.atk_done:
+    mov eax, [r10+44]
+    cmp eax, 1
+    jl .move_done
+    mov [player_move_speed], eax
+.move_done:
+    mov eax, [r10+48]
+    cmp eax, -1
+    jge .jump_done
+    mov [player_jump_speed], eax
+.jump_done:
+    mov eax, [r10+52]
+    mov [skill_slot_ids+0], eax
+    mov eax, [r10+56]
+    mov [skill_slot_ids+4], eax
+    mov eax, [r10+60]
+    mov [skill_slot_ids+8], eax
+    mov eax, [r10+64]
+    mov [skill_slot_ids+12], eax
+.done:
     ret
 
 ; ------------------------------------------------------------
