@@ -80,6 +80,7 @@ extern MessageBoxA
 %define VK_A                0x41
 %define VK_D                0x44
 %define VK_X                0x58
+%define VK_E                0x45
 %define VK_ESCAPE           0x1B
 
 %define PLAYER_W            30
@@ -100,6 +101,8 @@ section .data
     txt_help_len     equ $-txt_help-1
     txt_runtime      db "LEELLA PRELUDE TEST RUNTIME",0
     txt_runtime_len  equ $-txt_runtime-1
+    txt_dialog       db "NPC: This is a live test map made in Leella Prelude.",0
+    txt_dialog_len   equ $-txt_dialog-1
 
     project_header:
         db "LPRJ0001"
@@ -116,6 +119,9 @@ section .data
     col_portal       dd 0x00D67FD4
     col_attack       dd 0x006FB5F2
     col_text         dd 0x00F2EEE8
+    col_hp           dd 0x006DCC75
+    col_hp_bg        dd 0x003A3531
+    col_dialog       dd 0x00282320
 
 section .bss
     hinstance        resq 1
@@ -146,6 +152,11 @@ section .bss
     attack_ticks     resd 1
     attack_cooldown  resd 1
     attack_hit_done  resd 1
+
+    player_hp        resd 1
+    invuln_ticks     resd 1
+    interact_cooldown resd 1
+    dialog_ticks     resd 1
 
 section .text
 
@@ -482,6 +493,64 @@ WndProc:
     call DeleteObject
 
 .hud:
+    ; HP background
+    mov dword [temp_rect+0], 16
+    mov dword [temp_rect+4], 66
+    mov dword [temp_rect+8], 216
+    mov dword [temp_rect+12], 82
+    mov ecx, [col_hp_bg]
+    call CreateSolidBrush
+    mov [rbp-40], rax
+    mov rcx, [rbp-32]
+    lea rdx, [temp_rect]
+    mov r8, rax
+    call FillRect
+    mov rcx, [rbp-40]
+    call DeleteObject
+
+    ; HP fill: 5 HP * 40 px
+    mov dword [temp_rect+0], 16
+    mov dword [temp_rect+4], 66
+    mov eax, [player_hp]
+    imul eax, 40
+    add eax, 16
+    mov [temp_rect+8], eax
+    mov dword [temp_rect+12], 82
+    mov ecx, [col_hp]
+    call CreateSolidBrush
+    mov [rbp-40], rax
+    mov rcx, [rbp-32]
+    lea rdx, [temp_rect]
+    mov r8, rax
+    call FillRect
+    mov rcx, [rbp-40]
+    call DeleteObject
+
+    cmp dword [dialog_ticks], 0
+    jle .hud_text
+
+    ; NPC dialogue panel
+    mov dword [temp_rect+0], 80
+    mov eax, [client_rect+12]
+    sub eax, 150
+    mov [temp_rect+4], eax
+    mov eax, [client_rect+8]
+    sub eax, 80
+    mov [temp_rect+8], eax
+    mov eax, [client_rect+12]
+    sub eax, 80
+    mov [temp_rect+12], eax
+    mov ecx, [col_dialog]
+    call CreateSolidBrush
+    mov [rbp-40], rax
+    mov rcx, [rbp-32]
+    lea rdx, [temp_rect]
+    mov r8, rax
+    call FillRect
+    mov rcx, [rbp-40]
+    call DeleteObject
+
+.hud_text:
     mov rcx, [rbp-32]
     mov edx, [col_text]
     call SetTextColor
@@ -503,6 +572,18 @@ WndProc:
     mov qword [rsp+32], txt_help_len
     call TextOutA
 
+    cmp dword [dialog_ticks], 0
+    jle .end_text
+    mov rcx, [rbp-32]
+    mov edx, 104
+    mov eax, [client_rect+12]
+    sub eax, 122
+    mov r8d, eax
+    lea r9, [txt_dialog]
+    mov qword [rsp+32], txt_dialog_len
+    call TextOutA
+
+.end_text:
     mov rcx, [rbp-8]
     lea rdx, [paint_buf]
     call EndPaint
@@ -674,12 +755,16 @@ update_game:
 
 .attack_update:
     cmp dword [attack_ticks], 0
-    jle .camera
+    jle .after_attack
     dec dword [attack_ticks]
     cmp dword [attack_hit_done], 0
-    jne .camera
+    jne .after_attack
     call attack_monsters
     mov dword [attack_hit_done], 1
+
+.after_attack:
+    call update_monsters_and_damage
+    call update_interaction
 
 .camera:
     mov eax, [player_x]
@@ -768,6 +853,218 @@ attack_monsters:
     ret
 
 
+
+
+; ------------------------------------------------------------
+; update_monsters_and_damage
+; Basic chase AI + player contact damage.
+; ------------------------------------------------------------
+update_monsters_and_damage:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 80
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+
+    cmp dword [invuln_ticks], 0
+    jle .dialog_tick
+    dec dword [invuln_ticks]
+
+.dialog_tick:
+    cmp dword [dialog_ticks], 0
+    jle .scan_start
+    dec dword [dialog_ticks]
+
+.scan_start:
+    xor r12d, r12d
+
+.scan:
+    cmp r12d, [entity_count]
+    jae .done
+
+    mov eax, r12d
+    imul eax, ENTITY_SIZE
+    lea r13, [entities]
+    add r13, rax
+    cmp dword [r13+0], ENTITY_MONSTER
+    jne .next
+
+    ; dx = player_x - monster_x
+    mov eax, [player_x]
+    sub eax, [r13+4]
+    mov [rbp-8], eax
+
+    mov ecx, eax
+    test ecx, ecx
+    jns .abs_dx
+    neg ecx
+.abs_dx:
+    ; chase only inside 300 px and stop close to the player
+    cmp ecx, 300
+    jg .contact
+    cmp ecx, 36
+    jl .contact
+
+    cmp dword [rbp-8], 0
+    jl .move_left
+    inc dword [r13+4]
+    jmp .contact
+.move_left:
+    dec dword [r13+4]
+
+.contact:
+    cmp dword [invuln_ticks], 0
+    jne .next
+
+    mov eax, [player_x]
+    sub eax, [r13+4]
+    test eax, eax
+    jns .contact_abs_x
+    neg eax
+.contact_abs_x:
+    cmp eax, 28
+    jg .next
+
+    mov eax, [player_y]
+    sub eax, [r13+8]
+    test eax, eax
+    jns .contact_abs_y
+    neg eax
+.contact_abs_y:
+    cmp eax, 42
+    jg .next
+
+    dec dword [player_hp]
+    mov dword [invuln_ticks], 60
+    mov dword [player_vy], -8
+
+    mov eax, [player_x]
+    cmp eax, [r13+4]
+    jl .knock_left
+    add dword [player_x], 28
+    jmp .health_check
+.knock_left:
+    sub dword [player_x], 28
+    cmp dword [player_x], 0
+    jge .health_check
+    mov dword [player_x], 0
+
+.health_check:
+    cmp dword [player_hp], 0
+    jg .next
+    call respawn_player
+
+.next:
+    inc r12d
+    jmp .scan
+
+.done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
+    leave
+    ret
+
+
+; ------------------------------------------------------------
+; update_interaction
+; E near NPC opens prototype dialogue.
+; E near a portal returns to spawn (param reserved for future target data).
+; ------------------------------------------------------------
+update_interaction:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 80
+    mov [rbp-40], r12
+    mov [rbp-48], r13
+
+    cmp dword [interact_cooldown], 0
+    jle .read_key
+    dec dword [interact_cooldown]
+
+.read_key:
+    mov ecx, VK_E
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .done
+    cmp dword [interact_cooldown], 0
+    jne .done
+
+    mov dword [interact_cooldown], 18
+    xor r12d, r12d
+
+.scan:
+    cmp r12d, [entity_count]
+    jae .done
+
+    mov eax, r12d
+    imul eax, ENTITY_SIZE
+    lea r13, [entities]
+    add r13, rax
+
+    mov eax, [r13+0]
+    cmp eax, ENTITY_NPC
+    je .range
+    cmp eax, ENTITY_PORTAL
+    jne .next
+
+.range:
+    mov eax, [player_x]
+    sub eax, [r13+4]
+    test eax, eax
+    jns .abs_x
+    neg eax
+.abs_x:
+    cmp eax, 70
+    jg .next
+
+    mov eax, [player_y]
+    sub eax, [r13+8]
+    test eax, eax
+    jns .abs_y
+    neg eax
+.abs_y:
+    cmp eax, 70
+    jg .next
+
+    cmp dword [r13+0], ENTITY_NPC
+    jne .portal
+    mov dword [dialog_ticks], 180
+    jmp .done
+
+.portal:
+    mov eax, [spawn_x]
+    mov [player_x], eax
+    mov eax, [spawn_y]
+    mov [player_y], eax
+    mov dword [player_vx], 0
+    mov dword [player_vy], 0
+    jmp .done
+
+.next:
+    inc r12d
+    jmp .scan
+
+.done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
+    leave
+    ret
+
+
+; ------------------------------------------------------------
+; respawn_player
+; ------------------------------------------------------------
+respawn_player:
+    mov eax, [spawn_x]
+    mov [player_x], eax
+    mov eax, [spawn_y]
+    mov [player_y], eax
+    mov dword [player_vx], 0
+    mov dword [player_vy], 0
+    mov dword [player_hp], 5
+    mov dword [invuln_ticks], 90
+    ret
+
 ; ------------------------------------------------------------
 ; initialize_player
 ; ------------------------------------------------------------
@@ -781,6 +1078,10 @@ initialize_player:
     mov dword [spawn_x], 64
     mov dword [spawn_y], 64
     mov dword [facing_right], 1
+    mov dword [player_hp], 5
+    mov dword [invuln_ticks], 0
+    mov dword [interact_cooldown], 0
+    mov dword [dialog_ticks], 0
 
     xor r12d, r12d
 .scan:
