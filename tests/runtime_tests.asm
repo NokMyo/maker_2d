@@ -75,6 +75,25 @@ mainCRTStartup:
     ASSERT_EQ eax, 1, 55
     ASSERT_EQ dword [player_max_hp], 110, 56
 
+    call get_save_path
+    mov rcx, rax
+    mov edx, GENERIC_READ
+    xor r8d, r8d
+    xor r9d, r9d
+    mov qword [rsp+32], OPEN_EXISTING
+    mov qword [rsp+40], FILE_ATTRIBUTE_NORMAL
+    mov qword [rsp+48], 0
+    call CreateFileA
+    mov [test_handle], rax
+    mov dword [player_money], 999
+    call save_game
+    ASSERT_EQ eax, 0, 63
+    mov rcx, [test_handle]
+    call CloseHandle
+    call load_game
+    ASSERT_EQ eax, 1, 64
+    ASSERT_EQ dword [player_money], 7, 65
+
     ; Invalid map or truncated save must leave all live state untouched.
     mov dword [save_staging+12], MAX_MAPS
     call write_staged_save

@@ -102,7 +102,29 @@ mainCRTStartup:
     ASSERT_EQ dword [player_max_hp], 321, 25
     ASSERT_EQ dword [entities+4], 765, 26
 
-    ; Metadata boundary checks reject unterminated strings and unsafe names.
+    ; A locked destination makes replacement fail without truncating the old file.
+    call init_default_project
+    call save_project
+    ASSERT_EQ eax, 1, 30
+    lea rcx, [project_path]
+    mov edx, GENERIC_READ
+    xor r8d, r8d
+    xor r9d, r9d
+    mov qword [rsp+32], OPEN_EXISTING
+    mov qword [rsp+40], FILE_ATTRIBUTE_NORMAL
+    mov qword [rsp+48], 0
+    call CreateFileA
+    mov [test_handle], rax
+    mov dword [player_max_hp], 500
+    call save_project
+    ASSERT_EQ eax, 0, 31
+    mov rcx, [test_handle]
+    call CloseHandle
+    call load_project
+    ASSERT_EQ eax, 1, 32
+    ASSERT_EQ dword [player_max_hp], 100, 33
+
+    ; Metadata boundary checks reject unsafe names.
     lea rcx, [project_meta+112]
     mov dword [rcx], 02E2E5C2Eh
     call validate_exe_name
