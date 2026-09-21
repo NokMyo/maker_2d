@@ -98,6 +98,21 @@ section .bss
     property_index       resd 1
     database_index       resd 1
     rename_mode          resd 1
+    event_command_index  resd 1
+    undo_valid           resd 1
+    redo_valid           resd 1
+    undo_platform_count  resd 1
+    undo_entity_count    resd 1
+    redo_platform_count  resd 1
+    redo_entity_count    resd 1
+    undo_platforms       resb MAX_PLATFORMS*PLATFORM_SIZE
+    undo_entities        resb MAX_ENTITIES*ENTITY_SIZE
+    undo_platform_maps   resd MAX_PLATFORMS
+    undo_entity_maps     resd MAX_ENTITIES
+    redo_platforms       resb MAX_PLATFORMS*PLATFORM_SIZE
+    redo_entities        resb MAX_ENTITIES*ENTITY_SIZE
+    redo_platform_maps   resd MAX_PLATFORMS
+    redo_entity_maps     resd MAX_ENTITIES
     ts_text_buffer       resb 128
 
 section .text
@@ -153,6 +168,9 @@ init_project_systems:
     mov dword [property_index], 0
     mov dword [database_index], 0
     mov dword [rename_mode], 0
+    mov dword [event_command_index], 0
+    mov dword [undo_valid], 0
+    mov dword [redo_valid], 0
 
     lea rcx, [maps]
     lea rdx, [ts_default_map]
@@ -902,6 +920,10 @@ system_keydown:
     je .prev_map
     cmp ecx, 022h                 ; PgDn
     je .next_map
+    cmp ecx, 026h                 ; Up
+    je .event_prev_command
+    cmp ecx, 028h                 ; Down
+    je .event_next_command
     cmp ecx, 009h                 ; Tab
     je .next_field
     cmp ecx, 02Dh                 ; Insert
@@ -956,11 +978,13 @@ system_keydown:
     mov [editor_panel_mode], eax
     mov dword [property_index], 0
     mov dword [database_index], 0
+    mov dword [event_command_index], 0
     jmp .handled
 .db_first:
     mov dword [editor_panel_mode], 3
     mov dword [property_index], 0
     mov dword [database_index], 0
+    mov dword [event_command_index], 0
     jmp .handled
 .import_sprite:
     call ts_import_sprite
@@ -983,12 +1007,59 @@ system_keydown:
 .next_map:
     call ts_next_map
     jmp .handled
+.event_prev_command:
+    cmp dword [editor_panel_mode], 9
+    jne .not_handled
+    cmp dword [event_command_index], 0
+    jle .handled
+    dec dword [event_command_index]
+    jmp .handled
+.event_next_command:
+    cmp dword [editor_panel_mode], 9
+    jne .not_handled
+    mov eax, [database_index]
+    cmp eax, [event_count]
+    jae .handled
+    imul eax, EVENT_SIZE
+    mov ecx, [events+rax+32]
+    test ecx, ecx
+    jle .handled
+    dec ecx
+    cmp [event_command_index], ecx
+    jge .handled
+    inc dword [event_command_index]
+    jmp .handled
 .next_field:
     cmp dword [editor_panel_mode], 0
     je .not_handled
     inc dword [property_index]
-    cmp dword [property_index], 7
-    jbe .handled
+    mov eax, 7
+    cmp dword [editor_panel_mode], 3
+    jne .nf_event
+    mov eax, 9
+    jmp .nf_check
+.nf_event:
+    cmp dword [editor_panel_mode], 9
+    jne .nf_ui
+    mov eax, 4
+    jmp .nf_check
+.nf_ui:
+    cmp dword [editor_panel_mode], 11
+    jne .nf_controls
+    mov eax, 2
+    jmp .nf_check
+.nf_controls:
+    cmp dword [editor_panel_mode], 12
+    jne .nf_map
+    mov eax, 6
+    jmp .nf_check
+.nf_map:
+    cmp dword [editor_panel_mode], 10
+    jne .nf_check
+    mov eax, 6
+.nf_check:
+    cmp [property_index], eax
+    jle .handled
     mov dword [property_index], 0
     jmp .handled
 .insert:
@@ -1440,9 +1511,12 @@ ts_adjust_setting:
     mov dword [r8+32], EVENT_COMMANDS
     ret
 .event_command:
-    ; fields 1..4 edit first command opcode/a/b/c
+    ; fields 1..4 edit selected command opcode/a/b/c
     dec eax
     imul eax, 4
+    mov edx, [event_command_index]
+    imul edx, EVENT_COMMAND_SIZE
+    add eax, edx
     add eax, 48
     add dword [r8+rax], ecx
 .done:
@@ -1690,6 +1764,9 @@ ts_get_setting_value:
 .event_field:
     dec eax
     imul eax, 4
+    mov edx, [event_command_index]
+    imul edx, EVENT_COMMAND_SIZE
+    add eax, edx
     add eax, 48
     mov eax, [r8+rax]
     ret
@@ -1948,6 +2025,171 @@ system_draw_panel:
     leave
     ret
 
+
+
+; ------------------------------------------------------------
+; One-level scene Undo / Redo (platforms + entities + map ownership).
+; ------------------------------------------------------------
+ts_copy_qwords:
+    push rsi
+    push rdi
+    mov rsi, rcx
+    mov rdi, rdx
+    mov ecx, r8d
+    rep movsq
+    pop rdi
+    pop rsi
+    ret
+
+history_capture:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
+    mov eax, [platform_count]
+    mov [undo_platform_count], eax
+    mov eax, [entity_count]
+    mov [undo_entity_count], eax
+
+    lea rcx, [platforms]
+    lea rdx, [undo_platforms]
+    mov r8d, (MAX_PLATFORMS*PLATFORM_SIZE)/8
+    call ts_copy_qwords
+    lea rcx, [entities]
+    lea rdx, [undo_entities]
+    mov r8d, (MAX_ENTITIES*ENTITY_SIZE)/8
+    call ts_copy_qwords
+    lea rcx, [platform_map_ids]
+    lea rdx, [undo_platform_maps]
+    mov r8d, MAX_PLATFORMS/2
+    call ts_copy_qwords
+    lea rcx, [entity_map_ids]
+    lea rdx, [undo_entity_maps]
+    mov r8d, MAX_ENTITIES/2
+    call ts_copy_qwords
+
+    mov dword [undo_valid], 1
+    mov dword [redo_valid], 0
+    leave
+    ret
+
+history_save_redo:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
+    mov eax, [platform_count]
+    mov [redo_platform_count], eax
+    mov eax, [entity_count]
+    mov [redo_entity_count], eax
+    lea rcx, [platforms]
+    lea rdx, [redo_platforms]
+    mov r8d, (MAX_PLATFORMS*PLATFORM_SIZE)/8
+    call ts_copy_qwords
+    lea rcx, [entities]
+    lea rdx, [redo_entities]
+    mov r8d, (MAX_ENTITIES*ENTITY_SIZE)/8
+    call ts_copy_qwords
+    lea rcx, [platform_map_ids]
+    lea rdx, [redo_platform_maps]
+    mov r8d, MAX_PLATFORMS/2
+    call ts_copy_qwords
+    lea rcx, [entity_map_ids]
+    lea rdx, [redo_entity_maps]
+    mov r8d, MAX_ENTITIES/2
+    call ts_copy_qwords
+    mov dword [redo_valid], 1
+    leave
+    ret
+
+history_undo:
+    cmp dword [undo_valid], 0
+    je .done
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
+    call history_save_redo
+    mov eax, [undo_platform_count]
+    mov [platform_count], eax
+    mov eax, [undo_entity_count]
+    mov [entity_count], eax
+    lea rcx, [undo_platforms]
+    lea rdx, [platforms]
+    mov r8d, (MAX_PLATFORMS*PLATFORM_SIZE)/8
+    call ts_copy_qwords
+    lea rcx, [undo_entities]
+    lea rdx, [entities]
+    mov r8d, (MAX_ENTITIES*ENTITY_SIZE)/8
+    call ts_copy_qwords
+    lea rcx, [undo_platform_maps]
+    lea rdx, [platform_map_ids]
+    mov r8d, MAX_PLATFORMS/2
+    call ts_copy_qwords
+    lea rcx, [undo_entity_maps]
+    lea rdx, [entity_map_ids]
+    mov r8d, MAX_ENTITIES/2
+    call ts_copy_qwords
+    mov dword [undo_valid], 0
+    mov dword [selected_platform], -1
+    mov dword [selected_entity], -1
+    leave
+.done:
+    ret
+
+history_redo:
+    cmp dword [redo_valid], 0
+    je .done
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
+
+    ; current becomes the next undo state
+    mov eax, [platform_count]
+    mov [undo_platform_count], eax
+    mov eax, [entity_count]
+    mov [undo_entity_count], eax
+    lea rcx, [platforms]
+    lea rdx, [undo_platforms]
+    mov r8d, (MAX_PLATFORMS*PLATFORM_SIZE)/8
+    call ts_copy_qwords
+    lea rcx, [entities]
+    lea rdx, [undo_entities]
+    mov r8d, (MAX_ENTITIES*ENTITY_SIZE)/8
+    call ts_copy_qwords
+    lea rcx, [platform_map_ids]
+    lea rdx, [undo_platform_maps]
+    mov r8d, MAX_PLATFORMS/2
+    call ts_copy_qwords
+    lea rcx, [entity_map_ids]
+    lea rdx, [undo_entity_maps]
+    mov r8d, MAX_ENTITIES/2
+    call ts_copy_qwords
+    mov dword [undo_valid], 1
+
+    mov eax, [redo_platform_count]
+    mov [platform_count], eax
+    mov eax, [redo_entity_count]
+    mov [entity_count], eax
+    lea rcx, [redo_platforms]
+    lea rdx, [platforms]
+    mov r8d, (MAX_PLATFORMS*PLATFORM_SIZE)/8
+    call ts_copy_qwords
+    lea rcx, [redo_entities]
+    lea rdx, [entities]
+    mov r8d, (MAX_ENTITIES*ENTITY_SIZE)/8
+    call ts_copy_qwords
+    lea rcx, [redo_platform_maps]
+    lea rdx, [platform_map_ids]
+    mov r8d, MAX_PLATFORMS/2
+    call ts_copy_qwords
+    lea rcx, [redo_entity_maps]
+    lea rdx, [entity_map_ids]
+    mov r8d, MAX_ENTITIES/2
+    call ts_copy_qwords
+    mov dword [redo_valid], 0
+    mov dword [selected_platform], -1
+    mov dword [selected_entity], -1
+    leave
+.done:
+    ret
 
 ; ------------------------------------------------------------
 ; Import BMP sprite sheet and attach it to selected animation.
