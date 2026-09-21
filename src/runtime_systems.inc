@@ -697,17 +697,25 @@ load_game:
 ; ecx = target map id
 ; ------------------------------------------------------------
 change_map:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 48
+    mov [rbp-4], ecx
+
     cmp ecx, 0
     jl .done
     cmp ecx, [map_count]
     jae .done
+
     mov [active_map], ecx
     mov dword [camera_x], 0
-    push rcx
     call initialize_player
-    pop rcx
+
+    mov ecx, [rbp-4]
     call quest_reach_map
+
 .done:
+    leave
     ret
 
 ; ------------------------------------------------------------
