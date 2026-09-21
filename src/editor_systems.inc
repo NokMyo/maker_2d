@@ -11,6 +11,7 @@ section .data
     ts_name_variable     db "Variable",0
     ts_name_event        db "Event",0
     ts_name_sprite       db "Sprite",0
+    ts_name_class        db "Class",0
     ts_import_title      db "Import PNG/BMP Sprite Sheet",0
     ts_bmp_filter        db "Images (*.png;*.bmp)",0,"*.png;*.bmp",0,"All Files",0,"*.*",0,0
     ts_audio_filter      db "Wave Audio (*.wav)",0,"*.wav",0,"All Files",0,"*.*",0,0
@@ -81,6 +82,7 @@ section .bss
     variables            resb MAX_VARIABLES*VARIABLE_SIZE
     events               resb MAX_EVENTS*EVENT_SIZE
     sprites              resb MAX_SPRITES*SPRITE_SIZE
+    class_defs           resb MAX_CLASSES*CLASS_SIZE
 
     map_count            resd 1
     active_map           resd 1
@@ -103,6 +105,7 @@ section .bss
     variable_count       resd 1
     event_count          resd 1
     sprite_count         resd 1
+    class_count          resd 1
     ts_ofn               resb 160
     ts_file_buffer       resb 264
     ts_asset_path        resb 160
@@ -285,6 +288,21 @@ init_project_systems:
     call lstrcpyA
     mov dword [variables+32], 0
 
+    mov dword [class_count], 1
+    lea rcx, [class_defs]
+    lea rdx, [ts_name_class]
+    call lstrcpyA
+    mov dword [class_defs+32], 100
+    mov dword [class_defs+36], 100
+    mov dword [class_defs+40], 10
+    mov dword [class_defs+44], 5
+    mov dword [class_defs+48], -14
+    mov dword [class_defs+52], 0
+    mov dword [class_defs+56], 1
+    mov dword [class_defs+60], 2
+    mov dword [class_defs+64], 3
+    mov dword [class_defs+68], 0
+
     mov dword [sprite_count], 0
     mov dword [event_count], 1
     lea rcx, [events]
@@ -380,6 +398,9 @@ save_project:
     mov [database_header+24], eax
     mov eax, [sprite_count]
     mov [database_header+28], eax
+    mov eax, [class_count]
+    mov [database_header+32], eax
+    mov dword [database_header+36], 0
 
     lea rcx, [project_path]
     mov edx, GENERIC_WRITE
@@ -538,6 +559,15 @@ save_project:
     imul eax, SPRITE_SIZE
     mov rcx, [rbp-16]
     lea rdx, [sprites]
+    mov r8d, eax
+    call ts_write_block
+    test eax, eax
+    jz .close_fail
+
+    mov eax, [class_count]
+    imul eax, CLASS_SIZE
+    mov rcx, [rbp-16]
+    lea rdx, [class_defs]
     mov r8d, eax
     call ts_write_block
     test eax, eax
@@ -743,6 +773,10 @@ load_project:
     cmp eax, MAX_SPRITES
     ja .close_fail
     mov [sprite_count], eax
+    mov eax, [database_header+32]
+    cmp eax, MAX_CLASSES
+    ja .close_fail
+    mov [class_count], eax
 
     mov eax, [animation_count]
     imul eax, ANIMATION_SIZE
@@ -811,6 +845,15 @@ load_project:
     imul eax, SPRITE_SIZE
     mov rcx, [rbp-16]
     lea rdx, [sprites]
+    mov r8d, eax
+    call ts_read_block
+    test eax, eax
+    jz .close_fail
+
+    mov eax, [class_count]
+    imul eax, CLASS_SIZE
+    mov rcx, [rbp-16]
+    lea rdx, [class_defs]
     mov r8d, eax
     call ts_read_block
     test eax, eax
@@ -994,15 +1037,24 @@ system_keydown:
     jmp .handled
 .database:
     mov eax, [editor_panel_mode]
+    cmp eax, 13
+    je .db_first
+    cmp eax, 9
+    je .db_class
     cmp eax, 3
     jb .db_first
     cmp eax, 9
-    jae .db_first
+    ja .db_first
     inc eax
     mov [editor_panel_mode], eax
     mov dword [property_index], 0
     mov dword [database_index], 0
     mov dword [event_command_index], 0
+    jmp .handled
+.db_class:
+    mov dword [editor_panel_mode], 13
+    mov dword [property_index], 0
+    mov dword [database_index], 0
     jmp .handled
 .db_first:
     mov dword [editor_panel_mode], 3
@@ -1077,6 +1129,11 @@ system_keydown:
     mov eax, 9
     jmp .nf_check
 .nf_event:
+    cmp dword [editor_panel_mode], 13
+    jne .nf_monster
+    mov eax, 9
+    jmp .nf_check
+.nf_monster:
     cmp dword [editor_panel_mode], 5
     jne .nf_event_real
     mov eax, 11
@@ -1228,6 +1285,8 @@ ts_adjust_setting:
     je .ui
     cmp edx, 12
     je .controls
+    cmp edx, 13
+    je .class
     ret
 
 .entity_param:
@@ -1326,6 +1385,29 @@ ts_adjust_setting:
     xor dword [project_meta+72], 1
     ret
 
+.class:
+    mov eax, [database_index]
+    cmp eax, [class_count]
+    jae .done
+    imul eax, CLASS_SIZE
+    lea r8, [class_defs+rax]
+    mov eax, [property_index]
+    imul eax, 4
+    add eax, 32
+    add dword [r8+rax], ecx
+    ret
+
+.class:
+    mov eax, [database_index]
+    cmp eax, [class_count]
+    jae .zero
+    imul eax, CLASS_SIZE
+    lea r8, [class_defs+rax]
+    mov eax, [property_index]
+    imul eax, 4
+    add eax, 32
+    mov eax, [r8+rax]
+    ret
 .controls:
     mov eax, [property_index]
     cmp eax, 0
@@ -1418,8 +1500,27 @@ ts_adjust_setting:
     ret
 .project_audio:
     cmp dword [property_index], 5
-    jne .done
+    jne .project_class
     xor dword [project_meta+108], 1
+    ret
+.project_class:
+    cmp dword [property_index], 6
+    jne .done
+    add [project_flags], ecx
+    cmp dword [project_flags], 0
+    jge .project_class_upper
+    mov dword [project_flags], 0
+.project_class_upper:
+    mov eax, [class_count]
+    test eax, eax
+    jz .project_class_zero
+    dec eax
+    cmp [project_flags], eax
+    jle .done
+    mov [project_flags], eax
+    ret
+.project_class_zero:
+    mov dword [project_flags], 0
     ret
 
 .player:
@@ -1621,6 +1722,8 @@ ts_get_setting_value:
     je .ui
     cmp edx, 12
     je .controls
+    cmp edx, 13
+    je .class
     xor eax, eax
     ret
 .entity_param:
@@ -1753,8 +1856,13 @@ ts_get_setting_value:
     ret
 .paudio:
     cmp dword [property_index], 5
-    jne .pzero
+    jne .pclass
     mov eax, [project_meta+108]
+    ret
+.pclass:
+    cmp dword [property_index], 6
+    jne .pzero
+    mov eax, [project_flags]
     ret
 .pzero:
     xor eax, eax
@@ -1871,6 +1979,8 @@ ts_add_database_record:
     je .variable
     cmp eax, 9
     je .event
+    cmp eax, 13
+    je .class
     jmp .done
 .animation:
     mov eax, [animation_count]
@@ -1955,6 +2065,28 @@ ts_add_database_record:
     lea rdx, [ts_name_variable]
     call lstrcpyA
     inc dword [variable_count]
+    jmp .done
+.class:
+    mov eax, [class_count]
+    cmp eax, MAX_CLASSES
+    jae .done
+    mov [database_index], eax
+    imul eax, CLASS_SIZE
+    lea rcx, [class_defs+rax]
+    lea rdx, [ts_name_class]
+    call lstrcpyA
+    mov eax, [database_index]
+    imul eax, CLASS_SIZE
+    mov dword [class_defs+rax+32], 100
+    mov dword [class_defs+rax+36], 100
+    mov dword [class_defs+rax+40], 10
+    mov dword [class_defs+rax+44], 5
+    mov dword [class_defs+rax+48], -14
+    mov dword [class_defs+rax+52], 0
+    mov dword [class_defs+rax+56], 1
+    mov dword [class_defs+rax+60], 2
+    mov dword [class_defs+rax+64], 3
+    inc dword [class_count]
     jmp .done
 .event:
     mov eax, [event_count]
