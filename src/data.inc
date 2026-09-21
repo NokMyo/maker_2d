@@ -67,7 +67,7 @@
 ; Monster database
 ; ------------------------------------------------------------
 %define MAX_MONSTERS        64
-%define MONSTER_SIZE        64
+%define MONSTER_SIZE        80
 
 %define AI_IDLE             0
 %define AI_CHASE            1
@@ -83,6 +83,10 @@
 ; +52 drop_count
 ; +56 ai_type
 ; +60 animation_id
+; +64 phase2_hp_percent (boss only, e.g. 50)
+; +68 phase2_speed_bonus
+; +72 phase2_attack_bonus
+; +76 phase2_animation_id (-1 = keep base)
 
 ; ------------------------------------------------------------
 ; Item database
