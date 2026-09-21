@@ -74,6 +74,7 @@ section .bss
     equipped_weapon       resd 1
     equipped_armor        resd 1
     player_defense        resd 1
+    player_bonus_hp       resd 1
     mp_regen_tick         resd 1
     game_tick             resd 1
     dialog_text_ptr       resq 1
@@ -401,6 +402,7 @@ runtime_init_state:
     mov dword [equipped_weapon], -1
     mov dword [equipped_armor], -1
     mov dword [player_defense], 0
+    mov dword [player_bonus_hp], 0
     mov dword [mp_regen_tick], 0
     mov dword [game_tick], 0
     mov qword [dialog_text_ptr], 0
@@ -564,13 +566,15 @@ use_item0:
     jle .done
     cmp dword [inventory_counts], 0
     jle .done
+    call get_effective_max_hp
+    mov edx, eax
     mov eax, [player_hp]
-    cmp eax, [player_max_hp]
+    cmp eax, edx
     jge .done
     dec dword [inventory_counts]
     mov eax, [items+36]
     add [player_hp], eax
-    mov eax, [player_max_hp]
+    call get_effective_max_hp
     cmp [player_hp], eax
     jle .done
     mov [player_hp], eax
@@ -861,6 +865,14 @@ npc_quest_interact:
     mov ecx, [rbp-4]
     imul ecx, QUEST_SIZE
     lea r9, [quests+rcx]
+
+    cmp dword [r9+32], QUEST_TALK
+    jne .talk_progress_done
+    mov eax, [rbp-4]
+    mov edx, [r9+40]
+    mov [quest_progress+rax*4], edx
+.talk_progress_done:
+
     mov edx, [r9+40]
     mov eax, [rbp-4]
     cmp [quest_progress+rax*4], edx
@@ -869,6 +881,7 @@ npc_quest_interact:
     mov dword [r8+rax*4], QUEST_REWARDED
     mov ecx, [r9+44]
     add [player_exp], ecx
+    call check_level_up
     mov ecx, [r9+48]
     add [player_money], ecx
     mov ecx, [r9+52]
@@ -903,6 +916,7 @@ monster_killed:
     lea r8, [monster_defs+rax]
     mov eax, [r8+44]
     add [player_exp], eax
+    call check_level_up
     mov eax, [r8+48]
     cmp eax, 0
     jl .quests
@@ -1297,14 +1311,17 @@ equip_first_gear:
 
 equip_recalculate:
     mov dword [player_defense], 0
+    mov dword [player_bonus_hp], 0
     mov eax, [equipped_armor]
     cmp eax, 0
     jl .done
     cmp eax, [item_count]
     jae .done
     imul eax, ITEM_SIZE
-    mov eax, [items+rax+52]
-    mov [player_defense], eax
+    mov edx, [items+rax+52]
+    mov [player_defense], edx
+    mov edx, [items+rax+56]
+    mov [player_bonus_hp], edx
 .done:
     ret
 
@@ -1681,6 +1698,46 @@ draw_animation:
     leave
     ret
 
+
+; ------------------------------------------------------------
+; Effective maximum HP -> eax
+; ------------------------------------------------------------
+get_effective_max_hp:
+    mov eax, [player_max_hp]
+    add eax, [player_bonus_hp]
+    cmp eax, 1
+    jge .done
+    mov eax, 1
+.done:
+    ret
+
+; ------------------------------------------------------------
+; Basic level curve: next level costs level*100 EXP.
+; Carries excess EXP, +1 base attack, +10 base max HP per level.
+; ------------------------------------------------------------
+check_level_up:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 48
+.loop:
+    mov eax, [player_level]
+    imul eax, 100
+    cmp [player_exp], eax
+    jl .done
+
+    sub [player_exp], eax
+    inc dword [player_level]
+    inc dword [player_base_attack]
+    add dword [player_max_hp], 10
+    call get_effective_max_hp
+    mov [player_hp], eax
+    mov eax, [player_max_mp]
+    mov [player_mp], eax
+    jmp .loop
+.done:
+    leave
+    ret
+
 ; ------------------------------------------------------------
 ; Runtime HUD extension.
 ; rcx = HDC
@@ -1692,10 +1749,12 @@ runtime_draw_status:
     mov [rbp-40], r12
     mov r12, rcx
 
+    call get_effective_max_hp
+    mov [rbp-16], eax
     lea rcx, [ts_hud_buffer]
     lea rdx, [ts_hud_fmt1]
     mov r8d, [player_hp]
-    mov r9d, [player_max_hp]
+    mov r9d, [rbp-16]
     mov eax, [player_mp]
     mov [rsp+32], rax
     mov eax, [player_max_mp]
