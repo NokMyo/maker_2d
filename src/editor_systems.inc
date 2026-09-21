@@ -18,6 +18,7 @@ section .data
     ts_sprite_path_fmt   db "Assets\Sprite%03d.bmp",0
     ts_build_asset_fmt   db "Build\%s",0
 
+    ts_default_project   db "My Tsuramechoki Game",0
     ts_default_map       db "Map_001",0
     ts_default_idle      db "PlayerIdle",0
     ts_default_attack    db "PlayerAttack",0
@@ -45,6 +46,7 @@ section .data
 
 section .bss
     project_header_v2    resb PROJECT_HEADER_SIZE
+    project_meta         resb PROJECT_META_SIZE
     database_header      resb DATABASE_HEADER_SIZE
 
     platform_map_ids     resd MAX_PLATFORMS
@@ -70,6 +72,8 @@ section .bss
     player_max_mp        resd 1
     player_base_attack   resd 1
     project_flags        resd 1
+    start_map            resd 1
+    save_slots           resd 1
 
     animation_count      resd 1
     skill_count          resd 1
@@ -109,6 +113,17 @@ init_project_systems:
     mov dword [player_max_mp], 100
     mov dword [player_base_attack], 10
     mov dword [project_flags], 0
+    mov dword [start_map], 0
+    mov dword [save_slots], 3
+    lea rcx, [project_meta]
+    lea rdx, [ts_default_project]
+    call lstrcpyA
+    mov dword [project_meta+32], 0
+    mov dword [project_meta+36], 3
+    mov dword [project_meta+40], 0
+    mov qword [project_meta+44], 0
+    mov qword [project_meta+52], 0
+    mov dword [project_meta+60], 0
     mov dword [editor_panel_mode], 0
     mov dword [property_index], 0
     mov dword [database_index], 0
@@ -276,6 +291,11 @@ save_project:
     mov eax, [project_flags]
     mov [r12+60], eax
 
+    mov eax, [start_map]
+    mov [project_meta+32], eax
+    mov eax, [save_slots]
+    mov [project_meta+36], eax
+
     mov eax, [animation_count]
     mov [database_header+0], eax
     mov eax, [skill_count]
@@ -308,6 +328,13 @@ save_project:
     mov rcx, rax
     lea rdx, [project_header_v2]
     mov r8d, PROJECT_HEADER_SIZE
+    call ts_write_block
+    test eax, eax
+    jz .close_fail
+
+    mov rcx, [rbp-16]
+    lea rdx, [project_meta]
+    mov r8d, PROJECT_META_SIZE
     call ts_write_block
     test eax, eax
     jz .close_fail
@@ -533,6 +560,24 @@ load_project:
     mov [player_base_attack], eax
     mov eax, [project_header_v2+60]
     mov [project_flags], eax
+
+    mov rcx, [rbp-16]
+    lea rdx, [project_meta]
+    mov r8d, PROJECT_META_SIZE
+    call ts_read_block
+    test eax, eax
+    jz .close_fail
+
+    mov eax, [project_meta+32]
+    cmp eax, [map_count]
+    jae .close_fail
+    mov [start_map], eax
+    mov eax, [project_meta+36]
+    cmp eax, 1
+    jl .close_fail
+    cmp eax, 3
+    jg .close_fail
+    mov [save_slots], eax
 
     mov eax, [platform_count]
     imul eax, PLATFORM_SIZE
@@ -946,11 +991,39 @@ ts_adjust_setting:
     mov dword [screen_width], 320
     ret
 .project_h:
+    cmp dword [property_index], 1
+    jne .project_start
     imul eax, ecx, 16
     add [screen_height], eax
     cmp dword [screen_height], 240
     jge .done
     mov dword [screen_height], 240
+    ret
+.project_start:
+    cmp dword [property_index], 2
+    jne .project_slots
+    add [start_map], ecx
+    cmp dword [start_map], 0
+    jge .start_upper
+    mov dword [start_map], 0
+.start_upper:
+    mov eax, [map_count]
+    dec eax
+    cmp [start_map], eax
+    jle .done
+    mov [start_map], eax
+    ret
+.project_slots:
+    cmp dword [property_index], 3
+    jne .done
+    add [save_slots], ecx
+    cmp dword [save_slots], 1
+    jge .slots_upper
+    mov dword [save_slots], 1
+.slots_upper:
+    cmp dword [save_slots], 3
+    jle .done
+    mov dword [save_slots], 3
     ret
 
 .player:
@@ -1124,7 +1197,22 @@ ts_get_setting_value:
     mov eax, [screen_width]
     ret
 .ph:
+    cmp dword [property_index], 1
+    jne .pstart
     mov eax, [screen_height]
+    ret
+.pstart:
+    cmp dword [property_index], 2
+    jne .pslots
+    mov eax, [start_map]
+    ret
+.pslots:
+    cmp dword [property_index], 3
+    jne .pzero
+    mov eax, [save_slots]
+    ret
+.pzero:
+    xor eax, eax
     ret
 .player:
     mov eax, [property_index]
