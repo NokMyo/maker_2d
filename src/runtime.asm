@@ -1,8 +1,8 @@
-; Leella Prelude Runtime
+; Tsuramechoki Runtime
 ; 100% x86-64 assembly / NASM / Win32 + GDI
 ;
 ; Prototype runtime features:
-; - loads project.lprj
+; - loads project.tsrp
 ; - A/D or arrows move
 ; - Space jumps
 ; - X attacks
@@ -90,22 +90,22 @@ extern MessageBoxA
 %define MAX_FALL_SPEED      14
 
 section .data
-    class_name       db "LeellaPreludeRuntime",0
-    window_title     db "Leella Prelude - Test Game",0
-    project_path     db "project.lprj",0
+    class_name       db "TsuramechokiRuntime",0
+    window_title     db "Tsuramechoki - Test Game",0
+    project_path     db "project.tsrp",0
 
-    load_error_title db "Leella Prelude Runtime",0
-    load_error_text  db "project.lprj could not be loaded.",0
+    load_error_title db "Tsuramechoki Runtime",0
+    load_error_text  db "project.tsrp could not be loaded.",0
 
     txt_help         db "A/D or arrows: move   Space: jump   X: attack   E: interact   Esc: quit",0
     txt_help_len     equ $-txt_help-1
-    txt_runtime      db "LEELLA PRELUDE TEST RUNTIME",0
+    txt_runtime      db "TSURAMECHOKI TEST RUNTIME",0
     txt_runtime_len  equ $-txt_runtime-1
-    txt_dialog       db "NPC: This is a live test map made in Leella Prelude.",0
+    txt_dialog       db "NPC: This is a live test map made in Tsuramechoki.",0
     txt_dialog_len   equ $-txt_dialog-1
 
     project_header:
-        db "LPRJ0001"
+        db "TSRP0001"
         dd PROJECT_VERSION
         dd 0
         dd 0
