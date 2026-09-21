@@ -391,7 +391,6 @@ WndProc:
     mov [temp_rect+8], edx
 
     mov edx, [r13+8]
-    sub edx, 36
     mov [temp_rect+4], edx
     add edx, 36
     mov [temp_rect+12], edx
