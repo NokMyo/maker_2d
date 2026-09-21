@@ -125,9 +125,11 @@ init_project_systems:
     mov dword [project_meta+32], 0
     mov dword [project_meta+36], 3
     mov dword [project_meta+40], 0
-    mov qword [project_meta+44], 0
-    mov qword [project_meta+52], 0
-    mov dword [project_meta+60], 0
+    mov dword [project_meta+44], 0
+    mov dword [project_meta+48], 0
+    mov dword [project_meta+52], 0
+    mov dword [project_meta+56], -1
+    mov dword [project_meta+60], -1
     mov dword [editor_panel_mode], 0
     mov dword [property_index], 0
     mov dword [database_index], 0
@@ -1102,6 +1104,12 @@ ts_adjust_setting:
     je .p_mp
     cmp eax, 4
     je .p_attack
+    cmp eax, 5
+    je .p_idle_anim
+    cmp eax, 6
+    je .p_walk_anim
+    cmp eax, 7
+    je .p_air_anim
     ret
 .p_speed:
     add [player_move_speed], ecx
@@ -1134,6 +1142,39 @@ ts_adjust_setting:
     cmp dword [player_base_attack], 1
     jge .done
     mov dword [player_base_attack], 1
+    ret
+.p_idle_anim:
+    add [project_meta+44], ecx
+    jmp .clamp_player_anim
+.p_walk_anim:
+    add [project_meta+48], ecx
+    jmp .clamp_player_walk
+.p_air_anim:
+    add [project_meta+52], ecx
+    jmp .clamp_player_air
+.clamp_player_anim:
+    lea r8, [project_meta+44]
+    jmp .anim_clamp_common
+.clamp_player_walk:
+    lea r8, [project_meta+48]
+    jmp .anim_clamp_common
+.clamp_player_air:
+    lea r8, [project_meta+52]
+.anim_clamp_common:
+    cmp dword [r8], 0
+    jge .anim_upper
+    mov dword [r8], 0
+.anim_upper:
+    mov eax, [animation_count]
+    test eax, eax
+    jz .anim_zero
+    dec eax
+    cmp [r8], eax
+    jle .done
+    mov [r8], eax
+    ret
+.anim_zero:
+    mov dword [r8], 0
     ret
 
 .animation:
@@ -1290,6 +1331,12 @@ ts_get_setting_value:
     je .pmp
     cmp eax, 4
     je .pa
+    cmp eax, 5
+    je .pidle
+    cmp eax, 6
+    je .pwalk
+    cmp eax, 7
+    je .pair
     xor eax, eax
     ret
 .ps: mov eax, [player_move_speed]
@@ -1301,6 +1348,12 @@ ts_get_setting_value:
 .pmp: mov eax, [player_max_mp]
     ret
 .pa: mov eax, [player_base_attack]
+    ret
+.pidle: mov eax, [project_meta+44]
+    ret
+.pwalk: mov eax, [project_meta+48]
+    ret
+.pair: mov eax, [project_meta+52]
     ret
 .animation:
     mov eax, [database_index]
