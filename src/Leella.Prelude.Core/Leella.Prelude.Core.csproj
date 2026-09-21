@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Leella.Prelude.Core</AssemblyName>
+    <RootNamespace>Leella.Prelude.Core</RootNamespace>
+  </PropertyGroup>
+</Project>
