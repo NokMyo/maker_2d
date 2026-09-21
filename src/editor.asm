@@ -106,6 +106,7 @@ extern CopyFileA
 %define VK_6                0x36
 %define VK_7                0x37
 %define VK_8                0x38
+%define VK_9                0x39
 
 %define TOOL_SELECT         0
 %define TOOL_PLATFORM       1
@@ -117,6 +118,7 @@ extern CopyFileA
 %define TOOL_ROPE           7
 %define TOOL_CHECKPOINT     8
 %define TOOL_DECOR          9
+%define TOOL_EVENT          10
 
 %define LEFT_PANEL          220
 %define RIGHT_PANEL         270
@@ -161,6 +163,8 @@ section .data
     txt_checkpoint_len equ $-txt_checkpoint-1
     txt_decor       db "[8] Decor",0
     txt_decor_len   equ $-txt_decor-1
+    txt_event       db "[9] Event Trigger",0
+    txt_event_len   equ $-txt_event-1
 
     txt_props       db "PROPERTIES",0
     txt_props_len   equ $-txt_props-1
@@ -434,6 +438,8 @@ WndProc:
     je .tool_checkpoint
     cmp eax, VK_8
     je .tool_decor
+    cmp eax, VK_9
+    je .tool_event
 
     cmp eax, VK_S
     je .maybe_save
@@ -532,6 +538,9 @@ WndProc:
 .tool_decor:
     mov dword [tool_mode], TOOL_DECOR
     jmp .invalidate
+.tool_event:
+    mov dword [tool_mode], TOOL_EVENT
+    jmp .invalidate
 
 .mouse_down:
     mov rcx, [rbp-8]
@@ -573,6 +582,8 @@ WndProc:
     jl .mouse_tool_checkpoint
     cmp eax, 472
     jl .mouse_tool_decor
+    cmp eax, 500
+    jl .mouse_tool_event
     jmp .handled
 
 .mouse_tool_select:
@@ -604,6 +615,9 @@ WndProc:
     jmp .invalidate
 .mouse_tool_decor:
     mov dword [tool_mode], TOOL_DECOR
+    jmp .invalidate
+.mouse_tool_event:
+    mov dword [tool_mode], TOOL_EVENT
     jmp .invalidate
 
 .check_top:
@@ -1347,6 +1361,13 @@ draw_editor_text:
     mov qword [rsp+32], txt_decor_len
     call TextOutA
 
+    mov rcx, r12
+    mov edx, 28
+    mov r8d, 476
+    lea r9, [txt_event]
+    mov qword [rsp+32], txt_event_len
+    call TextOutA
+
     ; top controls
     mov rcx, r12
     mov edx, LEFT_PANEL+18
@@ -1768,6 +1789,14 @@ place_entity:
     mov eax, [rbp-8]
     mov [r10+8], eax
     mov dword [r10+12], 0
+    mov eax, [rbp-12]
+    cmp eax, ENTITY_LADDER
+    je .default_length
+    cmp eax, ENTITY_ROPE
+    jne .param_ready
+.default_length:
+    mov dword [r10+12], 160
+.param_ready:
     mov eax, [entity_count]
     mov edx, [active_map]
     mov [entity_map_ids+rax*4], edx
