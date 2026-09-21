@@ -1399,17 +1399,6 @@ ts_adjust_setting:
     add dword [r8+rax], ecx
     ret
 
-.class:
-    mov eax, [database_index]
-    cmp eax, [class_count]
-    jae .zero
-    imul eax, CLASS_SIZE
-    lea r8, [class_defs+rax]
-    mov eax, [property_index]
-    imul eax, 4
-    add eax, 32
-    mov eax, [r8+rax]
-    ret
 .controls:
     mov eax, [property_index]
     cmp eax, 0
@@ -1956,6 +1945,17 @@ ts_get_setting_value:
     imul edx, EVENT_COMMAND_SIZE
     add eax, edx
     add eax, 48
+    mov eax, [r8+rax]
+    ret
+.class:
+    mov eax, [database_index]
+    cmp eax, [class_count]
+    jae .zero
+    imul eax, CLASS_SIZE
+    lea r8, [class_defs+rax]
+    mov eax, [property_index]
+    imul eax, 4
+    add eax, 32
     mov eax, [r8+rax]
     ret
 
