@@ -70,6 +70,8 @@ extern GdipGetImageHeight
 extern GdipCreateFromHDC
 extern GdipDeleteGraphics
 extern GdipDrawImageRectRectI
+extern mciSendStringA
+extern PlaySoundA
 
 %define CS_HREDRAW          0x0002
 %define CS_VREDRAW          0x0001
@@ -118,6 +120,10 @@ section .data
 
     load_error_title db "Tsuramechoki Runtime",0
     load_error_text  db "project.tsrp could not be loaded.",0
+    bgm_open_cmd     db 'open "Assets\\BGM.wav" type waveaudio alias tsbgm',0
+    bgm_play_cmd     db "play tsbgm repeat",0
+    bgm_close_cmd    db "close tsbgm",0
+    se_path          db "Assets\\SE.wav",0
 
     txt_help         db "A/D or arrows: move   Space: jump   X: attack   E: interact   Esc: quit",0
     txt_help_len     equ $-txt_help-1
@@ -228,6 +234,7 @@ mainCRTStartup:
 
     call runtime_init_state
     call initialize_player
+    call runtime_start_audio
 
     xor ecx, ecx
     call GetModuleHandleA
@@ -308,6 +315,7 @@ mainCRTStartup:
     jmp .loop
 
 .quit:
+    call runtime_stop_audio
     mov rcx, [gdip_token]
     test rcx, rcx
     jz .quit_exit
@@ -934,6 +942,7 @@ update_game:
     cmp [player_mp], eax
     jl .physics
     sub [player_mp], eax
+    call runtime_play_se
 
     mov eax, [r11+40]
     cmp eax, 1
