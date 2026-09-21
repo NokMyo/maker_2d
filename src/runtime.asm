@@ -49,8 +49,10 @@ extern KillTimer
 extern GetAsyncKeyState
 extern CreateFileA
 extern ReadFile
+extern WriteFile
 extern CloseHandle
 extern MessageBoxA
+extern wsprintfA
 
 %define CS_HREDRAW          0x0002
 %define CS_VREDRAW          0x0001
@@ -69,7 +71,9 @@ extern MessageBoxA
 %define IDC_ARROW           32512
 
 %define GENERIC_READ        0x80000000
+%define GENERIC_WRITE       0x40000000
 %define FILE_SHARE_READ     0x00000001
+%define CREATE_ALWAYS       2
 %define OPEN_EXISTING       3
 %define FILE_ATTRIBUTE_NORMAL 0x80
 %define INVALID_HANDLE_VALUE -1
@@ -175,6 +179,7 @@ mainCRTStartup:
     call MessageBoxA
 
 .project_ok:
+    call runtime_init_state
     call initialize_player
 
     xor ecx, ecx
@@ -212,8 +217,10 @@ mainCRTStartup:
     mov r9d, WS_OVERLAPPEDWINDOW | WS_VISIBLE
     mov qword [rsp+32], CW_USEDEFAULT
     mov qword [rsp+40], CW_USEDEFAULT
-    mov qword [rsp+48], 1100
-    mov qword [rsp+56], 720
+    mov eax, [screen_width]
+    mov [rsp+48], rax
+    mov eax, [screen_height]
+    mov [rsp+56], rax
     mov qword [rsp+64], 0
     mov qword [rsp+72], 0
     mov rax, [hinstance]
@@ -324,7 +331,10 @@ WndProc:
     lea rdx, [client_rect]
     call GetClientRect
 
-    mov ecx, [col_bg]
+    mov eax, [active_map]
+    imul eax, MAP_SIZE
+    lea r10, [maps+rax]
+    mov ecx, [r10+32]
     call CreateSolidBrush
     mov [rbp-40], rax
     mov rcx, [rbp-32]
@@ -350,6 +360,10 @@ WndProc:
     cmp r12d, [platform_count]
     jae .platform_done
 
+    mov eax, [active_map]
+    cmp dword [platform_map_ids+r12*4], eax
+    jne .platform_next
+
     mov eax, r12d
     imul eax, PLATFORM_SIZE
     lea r13, [platforms]
@@ -368,6 +382,7 @@ WndProc:
     mov rcx, [rbp-32]
     call LineTo
 
+.platform_next:
     inc r12d
     jmp .platform_loop
 
@@ -383,6 +398,10 @@ WndProc:
 .entity_loop:
     cmp r12d, [entity_count]
     jae .player_draw
+
+    mov eax, [active_map]
+    cmp dword [entity_map_ids+r12*4], eax
+    jne .entity_next
 
     mov eax, r12d
     imul eax, ENTITY_SIZE
@@ -508,11 +527,18 @@ WndProc:
     mov rcx, [rbp-40]
     call DeleteObject
 
-    ; HP fill: 5 HP * 40 px
+    ; HP fill scaled to configured maximum.
     mov dword [temp_rect+0], 16
     mov dword [temp_rect+4], 66
     mov eax, [player_hp]
-    imul eax, 40
+    imul eax, 200
+    cdq
+    mov ecx, [player_max_hp]
+    test ecx, ecx
+    jg .hp_div
+    mov ecx, 1
+.hp_div:
+    idiv ecx
     add eax, 16
     mov [temp_rect+8], eax
     mov dword [temp_rect+12], 82
@@ -572,6 +598,9 @@ WndProc:
     mov qword [rsp+32], txt_help_len
     call TextOutA
 
+    mov rcx, [rbp-32]
+    call runtime_draw_status
+
     cmp dword [dialog_ticks], 0
     jle .end_text
     mov rcx, [rbp-32]
@@ -630,7 +659,9 @@ update_game:
     jmp .check_right
 
 .go_left:
-    mov dword [player_vx], -MOVE_SPEED
+    mov eax, [player_move_speed]
+    neg eax
+    mov [player_vx], eax
     mov dword [facing_right], 0
 
 .check_right:
@@ -644,7 +675,8 @@ update_game:
     jz .jump
 
 .go_right:
-    mov dword [player_vx], MOVE_SPEED
+    mov eax, [player_move_speed]
+    mov [player_vx], eax
     mov dword [facing_right], 1
 
 .jump:
@@ -654,7 +686,8 @@ update_game:
     call GetAsyncKeyState
     test ax, 8000h
     jz .attack_input
-    mov dword [player_vy], JUMP_SPEED
+    mov eax, [player_jump_speed]
+    mov [player_vy], eax
     mov dword [player_grounded], 0
 
 .attack_input:
@@ -713,6 +746,10 @@ update_game:
     cmp r12d, [platform_count]
     jae .after_collision
 
+    mov eax, [active_map]
+    cmp dword [platform_map_ids+r12*4], eax
+    jne .collision_next
+
     mov eax, r12d
     imul eax, PLATFORM_SIZE
     lea r13, [platforms]
@@ -765,6 +802,7 @@ update_game:
 .after_attack:
     call update_monsters_and_damage
     call update_interaction
+    call runtime_update_systems
 
 .camera:
     mov eax, [player_x]
@@ -797,6 +835,10 @@ attack_monsters:
     cmp r12d, [entity_count]
     jae .done
 
+    mov eax, [active_map]
+    cmp dword [entity_map_ids+r12*4], eax
+    jne .next
+
     mov eax, r12d
     imul eax, ENTITY_SIZE
     lea r13, [entities]
@@ -813,14 +855,27 @@ attack_monsters:
 
     cmp eax, 0
     jl .next
-    cmp eax, 92
+    mov edx, 92
+    cmp dword [skill_count], 0
+    jle .right_range_ready
+    mov edx, [skills+44]
+    add edx, PLAYER_W
+.right_range_ready:
+    cmp eax, edx
     jg .next
     jmp .vertical
 
 .left_facing:
     cmp eax, 0
     jg .next
-    cmp eax, -92
+    mov edx, 92
+    cmp dword [skill_count], 0
+    jle .left_range_ready
+    mov edx, [skills+44]
+    add edx, PLAYER_W
+.left_range_ready:
+    neg edx
+    cmp eax, edx
     jl .next
 
 .vertical:
@@ -835,11 +890,18 @@ attack_monsters:
     mov ecx, r12d
     shl rcx, 2
     add rax, rcx
-    dec dword [rax]
+    mov edx, [player_base_attack]
+    cmp dword [skill_count], 0
+    jle .damage_ready
+    add edx, [skills+32]
+.damage_ready:
+    sub dword [rax], edx
     cmp dword [rax], 0
     jg .next
 
-    ; Dead monster is removed only in runtime memory.
+    ; Reward/drop/quest progress before removing runtime monster.
+    mov ecx, [r13+12]
+    call monster_killed
     mov dword [r13+0], ENTITY_NONE
 
 .next:
@@ -881,6 +943,10 @@ update_monsters_and_damage:
 .scan:
     cmp r12d, [entity_count]
     jae .done
+
+    mov eax, [active_map]
+    cmp dword [entity_map_ids+r12*4], eax
+    jne .next
 
     mov eax, r12d
     imul eax, ENTITY_SIZE
@@ -934,7 +1000,18 @@ update_monsters_and_damage:
     cmp eax, 42
     jg .next
 
-    dec dword [player_hp]
+    mov eax, [r13+12]
+    cmp eax, 0
+    jl .contact_damage_default
+    cmp eax, [monster_count]
+    jae .contact_damage_default
+    imul eax, MONSTER_SIZE
+    mov eax, [monster_defs+rax+36]
+    jmp .contact_damage_ready
+.contact_damage_default:
+    mov eax, 1
+.contact_damage_ready:
+    sub [player_hp], eax
     mov dword [invuln_ticks], 60
     mov dword [player_vy], -8
 
@@ -996,6 +1073,10 @@ update_interaction:
     cmp r12d, [entity_count]
     jae .done
 
+    mov eax, [active_map]
+    cmp dword [entity_map_ids+r12*4], eax
+    jne .next
+
     mov eax, r12d
     imul eax, ENTITY_SIZE
     lea r13, [entities]
@@ -1028,16 +1109,13 @@ update_interaction:
 
     cmp dword [r13+0], ENTITY_NPC
     jne .portal
-    mov dword [dialog_ticks], 180
+    mov ecx, [r13+12]
+    call npc_quest_interact
     jmp .done
 
 .portal:
-    mov eax, [spawn_x]
-    mov [player_x], eax
-    mov eax, [spawn_y]
-    mov [player_y], eax
-    mov dword [player_vx], 0
-    mov dword [player_vy], 0
+    mov ecx, [r13+12]
+    call change_map
     jmp .done
 
 .next:
@@ -1061,7 +1139,10 @@ respawn_player:
     mov [player_y], eax
     mov dword [player_vx], 0
     mov dword [player_vy], 0
-    mov dword [player_hp], 5
+    mov eax, [player_max_hp]
+    mov [player_hp], eax
+    mov eax, [player_max_mp]
+    mov [player_mp], eax
     mov dword [invuln_ticks], 90
     ret
 
@@ -1075,10 +1156,14 @@ initialize_player:
     mov [rbp-40], r12
     mov [rbp-48], r13
 
-    mov dword [spawn_x], 64
-    mov dword [spawn_y], 64
+    mov eax, [active_map]
+    imul eax, MAP_SIZE
+    lea r13, [maps+rax]
+    mov eax, [r13+36]
+    mov [spawn_x], eax
+    mov eax, [r13+40]
+    mov [spawn_y], eax
     mov dword [facing_right], 1
-    mov dword [player_hp], 5
     mov dword [invuln_ticks], 0
     mov dword [interact_cooldown], 0
     mov dword [dialog_ticks], 0
@@ -1087,6 +1172,10 @@ initialize_player:
 .scan:
     cmp r12d, [entity_count]
     jae .set_player
+
+    mov eax, [active_map]
+    cmp dword [entity_map_ids+r12*4], eax
+    jne .next
 
     mov eax, r12d
     imul eax, ENTITY_SIZE
@@ -1104,11 +1193,18 @@ initialize_player:
 .maybe_monster:
     cmp dword [r13+0], ENTITY_MONSTER
     jne .next
-    lea rax, [enemy_hp]
-    mov ecx, r12d
-    shl rcx, 2
-    add rax, rcx
-    mov dword [rax], 3
+
+    mov edx, 3
+    mov eax, [r13+12]
+    cmp eax, 0
+    jl .set_enemy_hp
+    cmp eax, [monster_count]
+    jae .set_enemy_hp
+    imul eax, MONSTER_SIZE
+    mov edx, [monster_defs+rax+32]
+.set_enemy_hp:
+    mov eax, r12d
+    mov [enemy_hp+rax*4], edx
 
 .next:
     inc r12d
@@ -1119,6 +1215,8 @@ initialize_player:
     mov [player_x], eax
     mov eax, [spawn_y]
     mov [player_y], eax
+    mov dword [player_vx], 0
+    mov dword [player_vy], 0
 
     mov r12, [rbp-40]
     mov r13, [rbp-48]
@@ -1129,7 +1227,7 @@ initialize_player:
 ; ------------------------------------------------------------
 ; load_project -> eax = 1 success, 0 fail
 ; ------------------------------------------------------------
-load_project:
+load_project_legacy:
     push rbp
     mov rbp, rsp
     sub rsp, 80
@@ -1216,3 +1314,6 @@ load_project:
     xor eax, eax
     leave
     ret
+
+
+%include "runtime_systems.inc"
