@@ -49,9 +49,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete-asset v0.0.1 LeellaPrelude.exe --yes
-          gh release delete-asset v0.0.1 LeellaRuntime.exe --yes
-          gh release delete-asset v0.0.1 LeellaPrelude-v0.0.1-windows-x64.zip --yes
           gh release delete-asset v0.0.1 Tsuramechoki.exe --yes
           gh release delete-asset v0.0.1 TsuramechokiRuntime.exe --yes
           gh release delete-asset v0.0.1 Tsuramechoki-v0.0.1-windows-x64.zip --yes
