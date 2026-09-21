@@ -1,6 +1,6 @@
-# LPRJ Project Format v1
+# TSRP Project Format v1
 
-Leella Prelude currently uses a compact binary format named `project.lprj`.
+Tsuramechoki currently uses a compact binary format named `project.tsrp`.
 
 All coordinates are signed 32-bit integers in world pixels.
 
@@ -8,7 +8,7 @@ All coordinates are signed 32-bit integers in world pixels.
 
 | Offset | Size | Meaning |
 | ---: | ---: | --- |
-| 0 | 8 | ASCII magic `LPRJ0001` |
+| 0 | 8 | ASCII magic `TSRP0001` |
 | 8 | 4 | Format version, currently 1 |
 | 12 | 4 | Platform count |
 | 16 | 4 | Entity count |
