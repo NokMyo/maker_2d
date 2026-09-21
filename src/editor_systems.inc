@@ -80,7 +80,7 @@ section .bss
     event_count          resd 1
     sprite_count         resd 1
     ts_ofn               resb 160
-    ts_file_buffer       resb 260
+    ts_file_buffer       resb 264
     ts_asset_path        resb 160
     ts_build_asset_path  resb 192
 
@@ -1519,7 +1519,9 @@ ts_import_sprite:
 export_game:
     push rbp
     mov rbp, rsp
-    sub rsp, 64
+    sub rsp, 96
+    mov [rbp-40], r12
+    mov [rbp-48], r13
 
     call save_project
 
@@ -1541,32 +1543,34 @@ export_game:
     xor edx, edx
     call CreateDirectoryA
 
-    xor r10d, r10d
+    xor r12d, r12d
 .asset_loop:
-    cmp r10d, [sprite_count]
+    cmp r12d, [sprite_count]
     jae .export_done
-    mov eax, r10d
+
+    mov eax, r12d
     imul eax, SPRITE_SIZE
-    lea r11, [sprites+rax]
-    cmp byte [r11+32], 0
+    lea r13, [sprites+rax]
+    cmp byte [r13+32], 0
     je .asset_next
 
     lea rcx, [ts_build_asset_path]
     lea rdx, [ts_build_asset_fmt]
-    lea r8, [r11+32]
+    lea r8, [r13+32]
     call wsprintfA
 
-    mov eax, r10d
-    imul eax, SPRITE_SIZE
-    lea r11, [sprites+rax]
-    lea rcx, [r11+32]
+    ; r12/r13 are nonvolatile across Win64 API calls.
+    lea rcx, [r13+32]
     lea rdx, [ts_build_asset_path]
     xor r8d, r8d
     call CopyFileA
+
 .asset_next:
-    inc r10d
+    inc r12d
     jmp .asset_loop
 
 .export_done:
+    mov r12, [rbp-40]
+    mov r13, [rbp-48]
     leave
     ret
