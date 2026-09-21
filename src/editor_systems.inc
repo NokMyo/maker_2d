@@ -37,6 +37,9 @@ section .data
     ts_fmt_map           db "Map %d / %d",0
     ts_fmt_mode          db "Editor mode %d   field %d",0
     ts_fmt_value         db "Value: %d",0
+    ts_project_fmt       db "Project: %s",0
+    ts_rename_hint       db "F8 Rename project (type, Enter done)",0
+    ts_rename_hint_len   equ $-ts_rename_hint-1
     ts_help1             db "F1 Project  F2 Player  F6 DB cycle",0
     ts_help1_len         equ $-ts_help1-1
     ts_help2             db "TAB field  +/- edit  INS add  F7 sprite BMP",0
@@ -91,6 +94,7 @@ section .bss
     editor_panel_mode    resd 1
     property_index       resd 1
     database_index       resd 1
+    rename_mode          resd 1
     ts_text_buffer       resb 128
 
 section .text
@@ -127,6 +131,7 @@ init_project_systems:
     mov dword [editor_panel_mode], 0
     mov dword [property_index], 0
     mov dword [database_index], 0
+    mov dword [rename_mode], 0
 
     lea rcx, [maps]
     lea rdx, [ts_default_map]
@@ -847,6 +852,8 @@ system_keydown:
     je .database
     cmp ecx, 076h                 ; F7 sprite import
     je .import_sprite
+    cmp ecx, 077h                 ; F8 rename project
+    je .rename
     cmp ecx, 078h                 ; F9
     je .build
     cmp ecx, 021h                 ; PgUp
@@ -904,6 +911,9 @@ system_keydown:
 .import_sprite:
     call ts_import_sprite
     jmp .handled
+.rename:
+    mov dword [rename_mode], 1
+    jmp .handled
 .build:
     call export_game
     jmp .handled
@@ -942,6 +952,60 @@ system_keydown:
 .handled:
     mov eax, 1
     leave
+    ret
+
+; ------------------------------------------------------------
+; system_char_input(ecx = WM_CHAR character)
+; eax=1 handled, 0 ignored
+; ------------------------------------------------------------
+system_char_input:
+    cmp dword [rename_mode], 0
+    je .ignored
+
+    cmp ecx, 13
+    je .finish
+    cmp ecx, 8
+    je .backspace
+    cmp ecx, 32
+    jl .handled
+    cmp ecx, 126
+    jg .handled
+
+    mov [ts_text_buffer], cl
+    mov byte [ts_text_buffer+1], 0
+
+    lea rcx, [project_meta]
+    call lstrlenA
+    cmp eax, 31
+    jae .handled
+    lea rdx, [project_meta+rax]
+    mov cl, [ts_text_buffer]
+    mov [rdx], cl
+    mov byte [rdx+1], 0
+    jmp .handled
+
+.backspace:
+    lea rcx, [project_meta]
+    call lstrlenA
+    test eax, eax
+    jz .handled
+    dec eax
+    mov byte [project_meta+rax], 0
+    jmp .handled
+
+.finish:
+    cmp byte [project_meta], 0
+    jne .finish_ok
+    lea rcx, [project_meta]
+    lea rdx, [ts_default_project]
+    call lstrcpyA
+.finish_ok:
+    mov dword [rename_mode], 0
+.handled:
+    mov eax, 1
+    ret
+.ignored:
+    xor eax, eax
     ret
 
 ; ------------------------------------------------------------
@@ -1428,6 +1492,23 @@ system_draw_panel:
     call SetBkMode
 
     lea rcx, [ts_text_buffer]
+    lea rdx, [ts_project_fmt]
+    lea r8, [project_meta]
+    call wsprintfA
+    mov [rbp-8], eax
+
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    add eax, 18
+    mov edx, eax
+    mov rcx, r12
+    mov r8d, 180
+    lea r9, [ts_text_buffer]
+    mov eax, [rbp-8]
+    mov [rsp+32], rax
+    call TextOutA
+
+    lea rcx, [ts_text_buffer]
     lea rdx, [ts_fmt_map]
     mov r8d, [active_map]
     inc r8d
@@ -1440,7 +1521,7 @@ system_draw_panel:
     add eax, 18
     mov edx, eax
     mov rcx, r12
-    mov r8d, 205
+    mov r8d, 210
     lea r9, [ts_text_buffer]
     mov eax, [rbp-8]
     mov [rsp+32], rax
@@ -1458,7 +1539,7 @@ system_draw_panel:
     add eax, 18
     mov edx, eax
     mov rcx, r12
-    mov r8d, 230
+    mov r8d, 235
     lea r9, [ts_text_buffer]
     mov eax, [rbp-8]
     mov [rsp+32], rax
@@ -1476,7 +1557,7 @@ system_draw_panel:
     add eax, 18
     mov edx, eax
     mov rcx, r12
-    mov r8d, 255
+    mov r8d, 260
     lea r9, [ts_text_buffer]
     mov eax, [rbp-8]
     mov [rsp+32], rax
@@ -1487,7 +1568,7 @@ system_draw_panel:
     add eax, 18
     mov edx, eax
     mov rcx, r12
-    mov r8d, 300
+    mov r8d, 305
     lea r9, [ts_help1]
     mov qword [rsp+32], ts_help1_len
     call TextOutA
@@ -1497,7 +1578,7 @@ system_draw_panel:
     add eax, 18
     mov edx, eax
     mov rcx, r12
-    mov r8d, 325
+    mov r8d, 330
     lea r9, [ts_help2]
     mov qword [rsp+32], ts_help2_len
     call TextOutA
@@ -1507,9 +1588,19 @@ system_draw_panel:
     add eax, 18
     mov edx, eax
     mov rcx, r12
-    mov r8d, 350
+    mov r8d, 355
     lea r9, [ts_help3]
     mov qword [rsp+32], ts_help3_len
+    call TextOutA
+
+    mov eax, [client_rect+8]
+    sub eax, RIGHT_PANEL
+    add eax, 18
+    mov edx, eax
+    mov rcx, r12
+    mov r8d, 380
+    lea r9, [ts_rename_hint]
+    mov qword [rsp+32], ts_rename_hint_len
     call TextOutA
 
     mov r12, [rbp-40]
