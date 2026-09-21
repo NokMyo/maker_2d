@@ -172,6 +172,7 @@ section .bss
     attack_total_ticks resd 1
     attack_frame_ticks resd 1
     attack_anim_id   resd 1
+    active_skill_id  resd 1
     attack_hits_done resd 1
     attack_last_frame resd 1
 
@@ -231,7 +232,7 @@ mainCRTStartup:
 
     xor ecx, ecx
     lea rdx, [class_name]
-    lea r8, [window_title]
+    lea r8, [project_meta]
     mov r9d, WS_OVERLAPPEDWINDOW | WS_VISIBLE
     mov qword [rsp+32], CW_USEDEFAULT
     mov qword [rsp+40], CW_USEDEFAULT
@@ -537,9 +538,13 @@ WndProc:
     jmp .player_anim_ready
 
 .player_attack_anim:
-    cmp dword [skill_count], 0
-    jle .player_anim_ready
-    mov edx, [skills+56]
+    mov eax, [active_skill_id]
+    cmp eax, 0
+    jl .player_anim_ready
+    cmp eax, [skill_count]
+    jae .player_anim_ready
+    imul eax, SKILL_SIZE
+    mov edx, [skills+rax+56]
 
 .player_anim_ready:
     mov rcx, [rbp-32]
@@ -797,7 +802,7 @@ update_game:
 .jump:
     cmp dword [player_grounded], 0
     je .attack_input
-    mov ecx, VK_SPACE
+    mov ecx, [project_meta+88]
     call GetAsyncKeyState
     test ax, 8000h
     jz .attack_input
@@ -824,12 +829,46 @@ update_game:
     dec dword [attack_cooldown]
 
 .can_attack:
-    mov ecx, VK_X
+    cmp dword [attack_cooldown], 0
+    jne .physics
+
+    mov dword [active_skill_id], -1
+
+    mov ecx, [project_meta+76]
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .skill2_input
+    mov dword [active_skill_id], 0
+    jmp .skill_selected
+.skill2_input:
+    mov ecx, [project_meta+92]
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .skill3_input
+    mov dword [active_skill_id], 1
+    jmp .skill_selected
+.skill3_input:
+    mov ecx, [project_meta+96]
+    call GetAsyncKeyState
+    test ax, 8000h
+    jz .skill4_input
+    mov dword [active_skill_id], 2
+    jmp .skill_selected
+.skill4_input:
+    mov ecx, [project_meta+100]
     call GetAsyncKeyState
     test ax, 8000h
     jz .physics
-    cmp dword [attack_cooldown], 0
-    jne .physics
+    mov dword [active_skill_id], 3
+
+.skill_selected:
+    mov eax, [active_skill_id]
+    cmp eax, 0
+    jl .physics
+    cmp eax, [skill_count]
+    jae .physics
+    imul eax, SKILL_SIZE
+    lea r11, [skills+rax]
 
     mov dword [attack_ticks], 8
     mov dword [attack_total_ticks], 8
@@ -839,21 +878,19 @@ update_game:
     mov dword [attack_hits_done], 0
     mov dword [attack_last_frame], -1
 
-    cmp dword [skill_count], 0
-    jle .attack_ready
-    mov eax, [skills+36]
+    mov eax, [r11+36]
     cmp [player_mp], eax
     jl .physics
     sub [player_mp], eax
 
-    mov eax, [skills+40]
+    mov eax, [r11+40]
     cmp eax, 1
     jge .cooldown_ready
     mov eax, 1
 .cooldown_ready:
     mov [attack_cooldown], eax
 
-    mov eax, [skills+56]
+    mov eax, [r11+56]
     mov [attack_anim_id], eax
     cmp eax, 0
     jl .attack_ready
@@ -863,7 +900,7 @@ update_game:
     imul eax, ANIMATION_SIZE
     lea r10, [animations+rax]
 
-    mov eax, [r10+36]              ; frame_ms
+    mov eax, [r10+36]
     add eax, 15
     cdq
     mov ecx, 16
@@ -874,7 +911,7 @@ update_game:
 .frame_ticks_ok:
     mov [attack_frame_ticks], eax
 
-    mov ecx, [r10+32]              ; frame_count
+    mov ecx, [r10+32]
     cmp ecx, 1
     jge .frame_count_ok
     mov ecx, 1
@@ -1025,9 +1062,13 @@ update_game:
     jg .after_attack
 
     mov eax, 1
-    cmp dword [skill_count], 0
-    jle .hit_count_ready
-    mov eax, [skills+48]
+    mov edx, [active_skill_id]
+    cmp edx, 0
+    jl .hit_count_ready
+    cmp edx, [skill_count]
+    jae .hit_count_ready
+    imul edx, SKILL_SIZE
+    mov eax, [skills+rdx+48]
     cmp eax, 1
     jge .hit_count_ready
     mov eax, 1
@@ -1175,16 +1216,24 @@ attack_monsters:
     mov edx, eax
     pop rax
     add edx, [player_base_attack]
-    cmp dword [skill_count], 0
-    jle .damage_ready
-    add edx, [skills+32]
+    mov ecx, [active_skill_id]
+    cmp ecx, 0
+    jl .damage_ready
+    cmp ecx, [skill_count]
+    jae .damage_ready
+    imul ecx, SKILL_SIZE
+    add edx, [skills+rcx+32]
 .damage_ready:
     sub dword [rax], edx
 
     ; Skill knockback on every successful hit.
-    cmp dword [skill_count], 0
-    jle .after_knockback
-    mov edx, [skills+52]
+    mov eax, [active_skill_id]
+    cmp eax, 0
+    jl .after_knockback
+    cmp eax, [skill_count]
+    jae .after_knockback
+    imul eax, SKILL_SIZE
+    mov edx, [skills+rax+52]
     cmp dword [facing_right], 0
     je .knock_monster_left
     add [r13+4], edx
@@ -1419,7 +1468,7 @@ update_interaction:
     dec dword [interact_cooldown]
 
 .read_key:
-    mov ecx, VK_E
+    mov ecx, [project_meta+80]
     call GetAsyncKeyState
     test ax, 8000h
     jz .done
