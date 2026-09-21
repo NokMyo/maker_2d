@@ -137,6 +137,24 @@
 ; +60 flags
 
 ; ------------------------------------------------------------
+; Player class / job database
+; ------------------------------------------------------------
+%define MAX_CLASSES         16
+%define CLASS_SIZE          72
+
+; +00 char name[32]
+; +32 base_hp
+; +36 base_mp
+; +40 base_attack
+; +44 move_speed
+; +48 jump_speed
+; +52 skill_slot_1
+; +56 skill_slot_2
+; +60 skill_slot_3
+; +64 skill_slot_4
+; +68 flags
+
+; ------------------------------------------------------------
 ; Game variables / flags
 ; ------------------------------------------------------------
 %define MAX_VARIABLES       128
@@ -182,7 +200,7 @@
 ; ------------------------------------------------------------
 ; Database header appended to TSRP project data
 ; ------------------------------------------------------------
-%define DATABASE_HEADER_SIZE 32
+%define DATABASE_HEADER_SIZE 40
 ; +00 animation_count
 ; +04 skill_count
 ; +08 monster_count
@@ -191,6 +209,8 @@
 ; +20 variable_count
 ; +24 event_count
 ; +28 sprite_count
+; +32 class_count
+; +36 reserved
 
 ; ------------------------------------------------------------
 ; Runtime save data
