@@ -1,0 +1,54 @@
+name: Build v0.0.1 Windows binaries
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-v0.0.1.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install NASM
+        shell: powershell
+        run: choco install nasm -y
+
+      - name: Build editor
+        shell: cmd
+        run: |
+          nasm -f win64 -Isrc/ src\prelude.asm -o prelude.obj
+          link /entry:mainCRTStartup /subsystem:windows /machine:x64 prelude.obj user32.lib gdi32.lib kernel32.lib /out:LeellaPrelude.exe
+
+      - name: Build runtime
+        shell: cmd
+        run: |
+          nasm -f win64 -Isrc/ src\runtime.asm -o runtime.obj
+          link /entry:mainCRTStartup /subsystem:windows /machine:x64 runtime.obj user32.lib gdi32.lib kernel32.lib /out:LeellaRuntime.exe
+
+      - name: Package
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item LeellaPrelude.exe dist\LeellaPrelude.exe
+          Copy-Item LeellaRuntime.exe dist\LeellaRuntime.exe
+          Compress-Archive -Path dist\* -DestinationPath LeellaPrelude-v0.0.1-windows-x64.zip -Force
+
+      - name: Upload binaries to v0.0.1
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.0.1
+          files: |
+            dist/LeellaPrelude.exe
+            dist/LeellaRuntime.exe
+            LeellaPrelude-v0.0.1-windows-x64.zip
