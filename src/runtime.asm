@@ -58,6 +58,7 @@ extern WriteFile
 extern CloseHandle
 extern MessageBoxA
 extern wsprintfA
+extern lstrlenA
 
 %define CS_HREDRAW          0x0002
 %define CS_VREDRAW          0x0001
@@ -668,6 +669,27 @@ WndProc:
 
     cmp dword [dialog_ticks], 0
     jle .end_text
+
+    mov rax, [dialog_text_ptr]
+    test rax, rax
+    jz .fallback_dialog
+
+    mov rcx, rax
+    call lstrlenA
+    mov [rbp-80], eax
+
+    mov rcx, [rbp-32]
+    mov edx, 104
+    mov eax, [client_rect+12]
+    sub eax, 122
+    mov r8d, eax
+    mov r9, [dialog_text_ptr]
+    mov eax, [rbp-80]
+    mov [rsp+32], rax
+    call TextOutA
+    jmp .end_text
+
+.fallback_dialog:
     mov rcx, [rbp-32]
     mov edx, 104
     mov eax, [client_rect+12]
