@@ -102,6 +102,8 @@ extern CopyFileA
 %define VK_S                0x53
 %define VK_N                0x4E
 %define VK_O                0x4F
+%define VK_Y                0x59
+%define VK_Z                0x5A
 %define VK_1                0x31
 %define VK_2                0x32
 %define VK_3                0x33
@@ -460,6 +462,10 @@ WndProc:
     je .maybe_new
     cmp eax, VK_O
     je .maybe_load
+    cmp eax, VK_Z
+    je .maybe_undo
+    cmp eax, VK_Y
+    je .maybe_redo
     jmp .handled
 
 .maybe_save:
@@ -488,6 +494,22 @@ WndProc:
     mov dword [selected_platform], -1
     jmp .invalidate
 
+.maybe_undo:
+    mov ecx, VK_CONTROL
+    call GetKeyState
+    test ax, 8000h
+    jz .handled
+    call history_undo
+    jmp .invalidate
+
+.maybe_redo:
+    mov ecx, VK_CONTROL
+    call GetKeyState
+    test ax, 8000h
+    jz .handled
+    call history_redo
+    jmp .invalidate
+
 .camera_home:
     mov dword [editor_camera_x], 0
     jmp .invalidate
@@ -497,25 +519,30 @@ WndProc:
     jmp .invalidate
 
 .do_delete:
+    call history_capture
     call delete_selection
     jmp .invalidate
 
 .nudge_left:
+    call history_capture
     mov ecx, -SNAP_SIZE
     xor edx, edx
     call nudge_selection
     jmp .invalidate
 .nudge_right:
+    call history_capture
     mov ecx, SNAP_SIZE
     xor edx, edx
     call nudge_selection
     jmp .invalidate
 .nudge_up:
+    call history_capture
     xor ecx, ecx
     mov edx, -SNAP_SIZE
     call nudge_selection
     jmp .invalidate
 .nudge_down:
+    call history_capture
     xor ecx, ecx
     mov edx, SNAP_SIZE
     call nudge_selection
@@ -666,6 +693,11 @@ WndProc:
     mov eax, [tool_mode]
     cmp eax, TOOL_SELECT
     je .canvas_select
+
+    push rax
+    call history_capture
+    pop rax
+
     cmp eax, TOOL_PLATFORM
     je .canvas_platform
 
