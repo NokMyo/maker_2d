@@ -33,6 +33,8 @@ section .data
     ts_runtime_src       db "TsuramechokiRuntime.exe",0
     ts_game_dst          db "Build\Game.exe",0
     ts_project_dst       db "Build\project.tsrp",0
+    ts_game_cmd          db "Game.exe",0
+    ts_build_cwd         db "Build",0
 
     ts_fmt_map           db "Map %d / %d",0
     ts_fmt_mode          db "Editor mode %d   field %d",0
@@ -44,7 +46,7 @@ section .data
     ts_help1_len         equ $-ts_help1-1
     ts_help2             db "TAB field  +/- edit  INS add  F7 sprite BMP",0
     ts_help2_len         equ $-ts_help2-1
-    ts_help3             db "PgUp/PgDn map  Ctrl+M new map  F9 build",0
+    ts_help3             db "PgUp/PgDn map  Ctrl+M new  F9 build  F10 build+run",0
     ts_help3_len         equ $-ts_help3-1
 
 section .bss
@@ -866,6 +868,8 @@ system_keydown:
     je .rename
     cmp ecx, 078h                 ; F9
     je .build
+    cmp ecx, 079h                 ; F10
+    je .build_run
     cmp ecx, 021h                 ; PgUp
     je .prev_map
     cmp ecx, 022h                 ; PgDn
@@ -930,6 +934,12 @@ system_keydown:
     jmp .handled
 .build:
     call export_game
+    jmp .handled
+.build_run:
+    call export_game
+    test eax, eax
+    jz .handled
+    call launch_built_game
     jmp .handled
 .prev_map:
     call ts_prev_map
@@ -1849,6 +1859,8 @@ export_game:
     mov [rbp-48], r13
 
     call save_project
+    test eax, eax
+    jz .export_fail
 
     lea rcx, [ts_build_dir]
     xor edx, edx
@@ -1895,7 +1907,62 @@ export_game:
     jmp .asset_loop
 
 .export_done:
+    mov eax, 1
+    jmp .export_return
+.export_fail:
+    xor eax, eax
+.export_return:
     mov r12, [rbp-40]
     mov r13, [rbp-48]
+    leave
+    ret
+
+; ------------------------------------------------------------
+; Launch Build\Game.exe with Build as the working directory.
+; ------------------------------------------------------------
+launch_built_game:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 128
+    mov [rbp-88], rdi
+
+    lea rcx, [runtime_cmd]
+    lea rdx, [ts_game_cmd]
+    call lstrcpyA
+
+    lea rdi, [startup_info]
+    xor eax, eax
+    mov ecx, 13
+    rep stosq
+    mov dword [startup_info], 104
+
+    lea rdi, [process_info]
+    xor eax, eax
+    mov ecx, 3
+    rep stosq
+
+    xor ecx, ecx
+    lea rdx, [runtime_cmd]
+    xor r8d, r8d
+    xor r9d, r9d
+    mov qword [rsp+32], 0
+    mov qword [rsp+40], 0
+    mov qword [rsp+48], 0
+    lea rax, [ts_build_cwd]
+    mov [rsp+56], rax
+    lea rax, [startup_info]
+    mov [rsp+64], rax
+    lea rax, [process_info]
+    mov [rsp+72], rax
+    call CreateProcessA
+    test eax, eax
+    jz .done
+
+    mov rcx, [process_info+0]
+    call CloseHandle
+    mov rcx, [process_info+8]
+    call CloseHandle
+.done:
+    mov rdi, [rbp-88]
     leave
     ret
