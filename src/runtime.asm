@@ -117,7 +117,7 @@ section .data
     txt_dialog_len   equ $-txt_dialog-1
 
     project_header:
-        db "TSRP0001"
+        db "TSRP0003"
         dd PROJECT_VERSION
         dd 0
         dd 0
@@ -604,11 +604,15 @@ WndProc:
     call DeleteObject
 
 .hud:
-    ; HP background
-    mov dword [temp_rect+0], 16
-    mov dword [temp_rect+4], 66
-    mov dword [temp_rect+8], 216
-    mov dword [temp_rect+12], 82
+    ; HP background at configured HUD anchor.
+    mov eax, [project_meta+64]
+    mov [temp_rect+0], eax
+    add eax, 200
+    mov [temp_rect+8], eax
+    mov eax, [project_meta+68]
+    mov [temp_rect+4], eax
+    add eax, 16
+    mov [temp_rect+12], eax
     mov ecx, [col_hp_bg]
     call CreateSolidBrush
     mov [rbp-40], rax
@@ -620,8 +624,10 @@ WndProc:
     call DeleteObject
 
     ; HP fill scaled to configured maximum.
-    mov dword [temp_rect+0], 16
-    mov dword [temp_rect+4], 66
+    mov eax, [project_meta+64]
+    mov [temp_rect+0], eax
+    mov eax, [project_meta+68]
+    mov [temp_rect+4], eax
     mov eax, [player_hp]
     imul eax, 200
     mov [rbp-84], eax
@@ -634,9 +640,11 @@ WndProc:
     mov ecx, 1
 .hp_div:
     idiv ecx
-    add eax, 16
+    add eax, [project_meta+64]
     mov [temp_rect+8], eax
-    mov dword [temp_rect+12], 82
+    mov eax, [project_meta+68]
+    add eax, 16
+    mov [temp_rect+12], eax
     mov ecx, [col_hp]
     call CreateSolidBrush
     mov [rbp-40], rax
