@@ -676,12 +676,25 @@ WndProc:
     mov eax, [client_rect+8]
     sub eax, RIGHT_PANEL
     cmp dword [rbp-80], eax
-    jge .handled
+    jl .canvas_bottom_check
+    mov ecx, [rbp-80]
+    mov edx, [rbp-84]
+    call advanced_panel_click
+    test eax, eax
+    jnz .invalidate
+    jmp .handled
+.canvas_bottom_check:
 
     mov eax, [client_rect+12]
     sub eax, BOTTOM_BAR
     cmp dword [rbp-84], eax
     jge .handled
+
+    mov ecx, [rbp-80]
+    mov edx, [rbp-84]
+    call advanced_canvas_click
+    test eax, eax
+    jnz .invalidate
 
     ; convert client -> world
     mov ecx, [rbp-80]
