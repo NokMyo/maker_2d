@@ -611,6 +611,7 @@ WndProc:
     mov eax, r10d
     and eax, 0FFFFh
     sub eax, LEFT_PANEL
+    add eax, [editor_camera_x]
     add eax, SNAP_SIZE/2
     and eax, -SNAP_SIZE
     mov [drag_cur_x], eax
